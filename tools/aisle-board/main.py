@@ -122,7 +122,8 @@ def parse_caption(text):
     events = [e for e in events if e in EVENT_INFO]
     risk = (m.group("risk") or "").lower()
     risk = risk if risk in RISK_RANK else ""
-    narrative = text[:m.start()].strip()
+    narrative = (text[:m.start()] + text[m.end():]).strip(" \n.")
+    narrative = narrative + "." if narrative and narrative[-1] not in ".!?" else narrative
     gap = GAP_RE.search(narrative)
     return {"events": events, "risk": risk, "narrative": narrative,
             "gap": gap.group(1) if gap else None}
