@@ -20,7 +20,8 @@ VSS_URL = os.environ["VSS_URL"].rstrip("/")
 VSS_USERNAME = os.environ["VSS_USERNAME"]
 VSS_PASSWORD = os.environ["VSS_PASSWORD"]
 PORT = int(os.environ.get("PORT", "8080"))
-LOCATIONS = [l.strip() for l in os.environ.get("BOARD_LOCATIONS", "warehouse3").split(",") if l.strip()]
+LOCATIONS = [l.strip() for l in os.environ.get("BOARD_LOCATIONS", "warehouse3,warehouse017").split(",") if l.strip()]
+ASK_FILTERS = json.loads(os.environ.get("ASK_FILTERS", '{"capture_type": "warehouse"}'))
 REFRESH_SEC = int(os.environ.get("REFRESH_SEC", "120"))
 WANDB_API_KEY = os.environ.get("WANDB_API_KEY", "")
 WANDB_PROJECT = os.environ.get("WANDB_PROJECT_PATH", "")
@@ -122,34 +123,47 @@ def fetch_chunks():
     return chunks
 
 
-def scene_and_camera(filename, camera_id=None):
-    rm = RUN_RE.search(filename or "")
+SITE_CAM_RE = re.compile(r"Warehouse_(?P<site>\d+)_Camera(?:_(?P<cam>\d+))?_chunk_(?P<chunk>\d+)")
+
+
+def describe_chunk(c):
+    """Returns (scene, camera, group, offset_sec). Views sharing a group show the same moment."""
+    fn = c.get("filename") or ""
+    rm = RUN_RE.search(fn)
     if rm:
-        return f"run {rm.group('run')}", rm.group("cam").replace("_", " ")
-    return (filename or "").split("_chunk")[0], camera_id or "camera"
+        scene = f"Warehouse 3 · run {rm.group('run')}"
+        return scene, rm.group("cam").replace("_", " "), scene, 0.0
+    sm = SITE_CAM_RE.search(fn)
+    if sm:
+        cam = f"cam {sm.group('cam') or '00'}"
+        offset = int(sm.group("chunk")) * float(c.get("chunk_duration_sec") or 30)
+        return f"Warehouse {sm.group('site')} · {cam}", cam, fn, offset
+    return fn.split("_chunk")[0], c.get("camera_id") or "camera", fn, 0.0
 
 
 def build_board(chunks):
     incidents, views_total, parsed_total, captions = {}, 0, 0, {}
     for c in chunks:
-        run, cam = scene_and_camera(c.get("filename", ""), c.get("camera_id"))
+        run, cam, group, offset = describe_chunk(c)
         for seg in c.get("timeline") or []:
             views_total += 1
             p = parse_caption(seg.get("reasoning_content"))
+            start = offset + float(seg.get("segment_start_sec") or 0)
+            end = offset + float(seg.get("segment_end_sec") or 0)
             captions[seg.get("source")] = {
-                "scene": run, "camera": cam,
+                "scene": run, "camera": cam, "start_sec": start, "end_sec": end,
                 "narrative": p["narrative"] if p else (seg.get("reasoning_content") or ""),
                 "events": p["events"] if p else [], "risk": p["risk"] if p else "",
             }
             if not p:
                 continue
             parsed_total += 1
-            key = f"{run}|{seg.get('segment_number')}"
+            key = f"{group}|{seg.get('segment_number')}"
             inc = incidents.setdefault(key, {
                 "id": hashlib.sha1(key.encode()).hexdigest()[:10],
                 "scene": run,
-                "start_sec": seg.get("segment_start_sec"),
-                "end_sec": seg.get("segment_end_sec"),
+                "start_sec": start,
+                "end_sec": end,
                 "time": c.get("upload_timestamp"),
                 "location": c.get("location"),
                 "camera_id": c.get("camera_id"),
@@ -304,7 +318,7 @@ def llm_summarize(inc):
     if key in _llm_cache:
         return _llm_cache[key]
     prompt = (
-        "Several warehouse cameras saw the same 5-second moment. Camera notes:\n"
+        "One or more warehouse cameras saw the same 5-second moment. Robots and AGVs count as vehicles. Camera notes:\n"
         f"{evidence}\n\n"
         "Reply with JSON only: {\"what_happened\": one plain sentence for a shift lead, "
         "describing who was near or blocking whom, \"action\": one short imperative fix "
@@ -396,7 +410,7 @@ class Board:
 
     def ask(self, question):
         body = {"query": question, "top_k": 8, "llm_top_n": 3, "min_similarity": 0.25,
-                "metadata_filters": {"location": LOCATIONS[0]} if len(LOCATIONS) == 1 else {}}
+                "metadata_filters": ASK_FILTERS}
         res = vss.post("/api/v1/agent/search-and-answer", body)
         clips = []
         for ch in (res.get("evidence") or {}).get("chunks") or []:
@@ -405,13 +419,13 @@ class Board:
                 continue
             with self.lock:
                 cap = self.captions.get(src)
-            scene, cam = scene_and_camera(ch.get("filename", ""))
+            scene, cam, _, offset = describe_chunk(ch)
             clips.append({
                 "source": src,
                 "scene": cap["scene"] if cap else scene,
                 "camera": cap["camera"] if cap else cam,
-                "start_sec": ch.get("best_match_start_sec"),
-                "end_sec": ch.get("best_match_end_sec"),
+                "start_sec": cap["start_sec"] if cap else offset + float(ch.get("best_match_start_sec") or 0),
+                "end_sec": cap["end_sec"] if cap else offset + float(ch.get("best_match_end_sec") or 0),
                 "similarity": ch.get("similarity_score"),
                 "narrative": cap["narrative"] if cap else "",
                 "events": cap["events"] if cap else [],

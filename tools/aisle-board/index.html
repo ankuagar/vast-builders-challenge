@@ -90,7 +90,8 @@
   <button type="submit" id="askBtn">Ask the floor</button>
   <button type="button" class="ex">person walking behind a reversing forklift</button>
   <button type="button" class="ex">worker without a hard hat near a forklift</button>
-  <button type="button" class="ex">forklift parked in an aisle</button>
+  <button type="button" class="ex">robot waiting for a pallet jack to pass</button>
+  <button type="button" class="ex">aisle blocked by boxes or a parked vehicle</button>
 </form>
 <section class="stats" id="stats"></section>
 <main>
@@ -111,7 +112,7 @@ const FILTERS = [
   ["all", "All"], ["near_miss", "Near misses"], ["blocked", "Blocked aisles"], ["high", "High risk"],
 ];
 let data = { incidents: [], stats: {} };
-let filter = "all", selected = null, selectedCam = 0, showAck = false;
+let filter = "all", site = "all", selected = null, selectedCam = 0, showAck = false;
 let mode = "incident", askResult = null, askSel = 0, askBusy = false;
 let showBoxes = localStorage.getItem("aisle-boxes") !== "off", overlayRun = 0;
 const detCache = {};
@@ -141,7 +142,7 @@ async function attachOverlay(source, onInfo) {
   if (onInfo) onInfo(det);
   if (!det) { if ($("ovlNote")) $("ovlNote").textContent = "No YOLO detections for this clip."; return; }
   const labels = Object.entries(det.equipment_labels || {}).map(([k, n]) => `${k} ×${n}`).join(", ");
-  $("ovlNote").textContent = `Forklift isn't a YOLO class; spotted as ${labels || "nothing"} in ${det.equipment_frames}/${det.frames.length} frames.`;
+  $("ovlNote").textContent = `Forklifts, AGVs and robots aren't YOLO classes; vehicle spotted as ${labels || "nothing"} in ${det.equipment_frames}/${det.frames.length} frames.`;
   const [sh, sw] = det.shape;
   const draw = () => {
     if (run !== overlayRun) return;
@@ -162,7 +163,7 @@ async function attachOverlay(source, onInfo) {
       for (const b of fr.e) {
         ctx.setLineDash(fr.held ? [6, 5] : []);
         ctx.strokeStyle = "#faad14"; ctx.strokeRect(X(b[0]), Y(b[1]), (b[2] - b[0]) * kx, (b[3] - b[1]) * ky);
-        ctx.fillStyle = "#faad14"; ctx.fillText(fr.held ? "forklift (held)" : "forklift", X(b[0]) + 4, Y(b[1]) - 6);
+        ctx.fillStyle = "#faad14"; ctx.fillText(fr.held ? "vehicle (held)" : "vehicle", X(b[0]) + 4, Y(b[1]) - 6);
       }
       ctx.setLineDash([]);
       for (const b of fr.p) {
@@ -186,12 +187,14 @@ const acked = new Set(JSON.parse(localStorage.getItem("aisle-acked") || "[]"));
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const fmtSec = (s) => `0:${String(Math.round(s || 0)).padStart(2, "0")}`;
+const fmtSec = (s) => { const t = Math.round(s || 0); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
+const siteOf = (i) => i.scene.split(" · ")[0];
 const clipUrl = (src) => `${BASE}clip?source=${encodeURIComponent(src)}`;
 
 function visible() {
   return data.incidents.filter((i) => {
     if (!showAck && acked.has(i.id)) return false;
+    if (site !== "all" && siteOf(i) !== site) return false;
     if (filter === "high") return i.risk === "high";
     if (filter === "all") return true;
     return i.categories.includes(filter);
@@ -210,9 +213,15 @@ function renderStats() {
 }
 
 function renderFilters() {
+  const sites = [...new Set(data.incidents.map(siteOf))].sort();
+  const siteBtns = sites.length > 1
+    ? `<span style="flex-basis:100%;height:0"></span>` + [["all", "All sites"], ...sites.map((s) => [s, s])].map(([id, label]) =>
+        `<button class="${site === id ? "on" : ""}" data-s="${esc(id)}">${esc(label)}</button>`).join("")
+    : "";
   $("filters").innerHTML = FILTERS.map(([id, label]) =>
-    `<button class="${filter === id ? "on" : ""}" data-f="${id}">${label}</button>`).join("");
-  $("filters").querySelectorAll("button").forEach((b) => b.onclick = () => { filter = b.dataset.f; render(); });
+    `<button class="${filter === id ? "on" : ""}" data-f="${id}">${label}</button>`).join("") + siteBtns;
+  $("filters").querySelectorAll("button[data-f]").forEach((b) => b.onclick = () => { filter = b.dataset.f; render(); });
+  $("filters").querySelectorAll("button[data-s]").forEach((b) => b.onclick = () => { site = b.dataset.s; render(); });
 }
 
 function renderList() {
@@ -302,7 +311,7 @@ function renderDetail() {
     </div>
     <div class="box"><div class="lbl">What happened</div>${esc(i.summary)}</div>
     ${i.action ? `<div class="box action"><div class="lbl">Suggested action</div>${esc(i.action)}</div>` : ""}
-    <div class="box" id="gapBox"><div class="lbl">Closest person–forklift gap · ${esc(v.camera)}</div><span class="when">Measuring…</span></div>
+    <div class="box" id="gapBox"><div class="lbl">Closest person–vehicle gap · ${esc(v.camera)}</div><span class="when">Measuring…</span></div>
     <div class="box">
       <div class="lbl">${esc(v.camera)} · risk ${esc(v.risk || "n/a")}${v.gap ? ` · closest gap ${esc(v.gap)}` : ""}</div>
       <div class="chips" style="margin:0 0 8px">${v.events.length ? v.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("") : `<span class="chip">No conflict from this angle</span>`}</div>
@@ -315,11 +324,11 @@ function renderDetail() {
     if (!box) return;
     const c = det && det.closest;
     const said = v.gap ? `Cosmos caption says <strong>${esc(v.gap)}</strong>.` : "Cosmos caption gives no distance.";
-    box.innerHTML = `<div class="lbl">Closest person–forklift gap · ${esc(v.camera)}</div>` + (c
-      ? `<span class="gapv ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span> <span class="when">YOLO at ${fmtSec(c.t)}${c.held ? " (forklift box held from an earlier frame)" : ""}</span>
+    box.innerHTML = `<div class="lbl">Closest person–vehicle gap · ${esc(v.camera)}</div>` + (c
+      ? `<span class="gapv ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span> <span class="when">YOLO at ${fmtSec(c.t)} into the clip${c.held ? " (vehicle box held from an earlier frame)" : ""}</span>
          <button id="jump" style="margin-left:8px">Jump to moment</button>
          <div class="when" style="margin-top:6px">${said} Estimate = 2D box distance scaled by the person's height (~1.7 m).</div>`
-      : `<span class="when">YOLO saw no forklift near a person from this angle. ${said}</span>`);
+      : `<span class="when">YOLO saw no vehicle near a person from this angle. ${said}</span>`);
     if (c && $("jump")) $("jump").onclick = () => { const p = $("player"); p.pause(); p.currentTime = Math.max(0, c.t); };
   });
   $("ack").onclick = () => {
