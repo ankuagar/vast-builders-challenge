@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warehouse Safety Monitor</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1216; --panel: #171b21; --panel2: #1e232b; --line: #2a313b;
+    --text: #e6e9ee; --muted: #8b95a3; --high: #ff4d4f; --medium: #faad14;
+    --low: #52c41a; --accent: #3ea6ff; --group: #b37feb;
+    --chip: #252c36; --chip-text: #c9d1dc; --dot: #444; --on-accent: #001;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f4f6f9; --panel: #ffffff; --panel2: #f0f3f7; --line: #d8dee6;
+    --text: #1a1f27; --muted: #5b6676; --high: #d4380d; --medium: #ad6800;
+    --low: #389e0d; --accent: #1668dc; --group: #7c3aed;
+    --chip: #e8ecf1; --chip-text: #3a4452; --dot: #b8c0cc; --on-accent: #fff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text);
+         display: flex; flex-direction: column; height: 100vh; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 22px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .3px; white-space: nowrap; }
+  header > * { flex-shrink: 0; white-space: nowrap; }
+  header #sub { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .sub, .when, .muted { color: var(--muted); font-size: 12px; }
+  header .sub { font-size: 13px; }
+  header .sub strong { color: var(--text); }
+  .spacer { flex: 1; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .55; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+  button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  #theme { padding: 6px 10px; }
+  .warn { color: var(--medium); font-size: 12px; padding: 6px 22px 0; }
+
+  .ask { display: flex; gap: 8px; align-items: center; padding: 12px 22px 0; flex-wrap: wrap; }
+  .ask input { flex: 1; min-width: 260px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; }
+  .ask input:focus { outline: none; border-color: var(--accent); }
+  .ask .ex { font-size: 12px; color: var(--muted); background: transparent; border-style: dashed; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; padding: 8px 22px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; text-align: left; }
+  .stats .stat { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; }
+  .stat .v { font-size: 18px; font-weight: 700; }
+  .stat .k { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .stat.high .v { color: var(--high); } .stat.medium .v { color: var(--medium); } .stat.low .v { color: var(--low); }
+  button.stat:hover { border-color: var(--accent); }
+  button.stat.on { background: var(--panel); color: var(--text); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+  main { display: grid; grid-template-columns: 440px 1fr; gap: 16px; padding: 0 22px 16px; flex: 1; min-height: 460px; }
+  .queue, .detail { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .queue { display: flex; flex-direction: column; overflow: hidden; }
+  .filters { padding: 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+  .fgroup { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .fgroup .flabel { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; width: 36px; }
+  .fgroup button { font-size: 12px; padding: 4px 7px; }
+  .fstatus { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+  .fstatus label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text); }
+  .fstatus button { font-size: 12px; padding: 2px 8px; }
+  .list { overflow-y: auto; flex: 1; }
+  .card { padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; border-left: 4px solid transparent; }
+  .card:hover { background: var(--panel2); }
+  .card.sel { background: var(--panel2); border-left-color: var(--accent); }
+  .card.ack { opacity: .45; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row .when { margin-left: auto; }
+  .card .sum { font-size: 13px; margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+  .badge.high { background: rgba(255,77,79,.18); color: var(--high); }
+  .badge.medium { background: rgba(250,173,20,.18); color: var(--medium); }
+  .badge.low { background: rgba(82,196,26,.18); color: var(--low); }
+  .badge.none { background: var(--chip); color: var(--muted); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--chip); color: var(--chip-text); }
+  .chip.measure { background: rgba(62,166,255,.15); color: var(--accent); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dot); flex: none; }
+  .dot.high { background: var(--high); } .dot.medium { background: var(--medium); } .dot.low { background: var(--low); }
+
+  .detail { padding: 16px; overflow-y: auto; container-type: inline-size; }
+  .split { display: grid; gap: 14px; margin-bottom: 10px; }
+  .split .decision .box:last-of-type { margin-bottom: 0; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  @container (min-width: 720px) {
+    .split { grid-template-columns: minmax(0, 3fr) minmax(250px, 2fr); align-items: start; }
+    .split .decision { order: 2; }
+  }
+  .info { cursor: help; border-bottom: 1px dotted var(--muted); }
+  .big.unclear { color: var(--muted); }
+  .detail h2 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+  .detail .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 0; }
+  .toolbar button { font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .toolbar button.on { background: var(--panel2); color: var(--accent); border-color: var(--accent); }
+  video { width: 100%; max-height: 50vh; background: #000; border-radius: 8px; display: block; }
+  .vwrap { position: relative; }
+  .vwrap canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .ovl { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .ovl label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; }
+  .box { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+  .box .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  .box.action { border-color: rgba(62,166,255,.4); }
+  .measure-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .measure-row:last-child { margin-bottom: 0; }
+  details.caption { padding: 8px 14px; }
+  details.caption summary { cursor: pointer; display: flex; align-items: baseline; gap: 10px; list-style: none; }
+  details.caption summary::-webkit-details-marker { display: none; }
+  details.caption summary::before { content: "▸"; color: var(--muted); }
+  details.caption[open] summary::before { content: "▾"; }
+  details.caption summary .lbl { margin: 0; }
+  details.caption .captxt { margin-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .measure-row button { font-size: 12px; padding: 2px 8px; }
+  .big { font-size: 20px; font-weight: 700; }
+  .big.close { color: var(--high); } .big.mid { color: var(--medium); } .big.far { color: var(--low); } .big.group { color: var(--group); }
+  .answer { line-height: 1.55; } .answer ul { margin: 6px 0; padding-left: 20px; }
+  .hits { display: flex; flex-direction: column; gap: 6px; }
+  .hit { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 8px 10px; }
+  .hit.on { border-color: var(--accent); }
+  .hit .score { font-variant-numeric: tabular-nums; color: var(--accent); min-width: 38px; }
+  .hit .txt { color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  [hidden] { display: none !important; }
+
+  .tabs { display: flex; gap: 4px; }
+  .tabs button { background: transparent; border-color: transparent; color: var(--muted); font-weight: 600; }
+  .tabs button.on { color: var(--text); border-color: var(--line); background: var(--panel2); }
+  .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .page { overflow-y: auto; padding: 12px 22px 22px; display: block; }
+  .page h3 { margin: 0 0 10px; font-size: 15px; display: flex; gap: 10px; align-items: baseline; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .kpis .stat { padding: 7px 12px; }
+  .kpis .k { color: var(--text); }
+  .kpis .k, .kpis .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hot { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); gap: 14px; align-items: start; }
+  .hotlist { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; }
+  .hotrow { text-align: left; display: flex; flex-direction: column; gap: 2px; }
+  .hotrow.on { background: var(--panel2); color: var(--text); border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+  .heatwrap { position: relative; }
+  .heatwrap video { max-height: none; height: auto; }
+  .heatwrap canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .legend { display: flex; gap: 14px; align-items: center; font-size: 12px; color: var(--muted); margin: 8px 0; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; vertical-align: -2px; }
+  .incchips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .incchip { font-size: 12px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 6px; }
+  .causes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+  .causes .box { margin: 0; }
+  .review input { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 13px; }
+  .review #note { width: 100%; margin-top: 10px; }
+  .review #reviewer { width: 130px; }
+  .box.reviewed { border-color: rgba(82,196,26,.4); }
+  .box.reviewed.fa { border-color: var(--line); }
+  .note { margin-top: 6px; font-style: italic; }
+  .report { max-width: 920px; margin: 0 auto; }
+  .report .headline { font-size: 18px; line-height: 1.4; margin: 6px 0 14px; }
+  .report table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .report th, .report td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .report th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .report td.n { font-variant-numeric: tabular-nums; }
+  .report ol, .report ul { margin: 4px 0; padding-left: 22px; line-height: 1.6; }
+  .report .item { padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .report .item:last-child { border-bottom: 0; }
+  @media print {
+    .tabs, #refresh, #theme, #kbdHint, .ask, #queueView, #insightsView, .noprint, .warn { display: none !important; }
+    body { background: #fff; color: #000; height: auto; display: block; }
+    header { border: 0; }
+    .page { overflow: visible; }
+    .panel, .box { background: #fff; border-color: #bbb; }
+    .muted, .sub, .report th { color: #444; }
+  }
+</style>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem("theme") ||
+    (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+</script>
+</head>
+<body>
+<header>
+  <h1>Warehouse Safety Monitor</h1>
+  <nav class="tabs" id="tabs">
+    <button data-tab="queue" class="on">Incidents</button>
+    <button data-tab="insights">Insights</button>
+    <button data-tab="report">Shift report</button>
+  </nav>
+  <span class="sub" id="sub">Loading…</span>
+  <span class="muted" id="kbdHint"><kbd>↑</kbd> <kbd>↓</kbd> to move</span>
+  <button id="theme"></button>
+  <button id="refresh">Refresh</button>
+</header>
+<div class="warn" id="warn" hidden></div>
+<form class="ask" id="askForm">
+  <input id="askInput" maxlength="300" placeholder="Search all warehouse footage, e.g. &quot;person walking behind a reversing forklift&quot;" autocomplete="off">
+  <button type="submit" class="primary" id="askBtn">Search footage</button>
+  <button type="button" class="ex">person behind a reversing forklift</button>
+  <button type="button" class="ex">robot waiting for a pallet jack</button>
+  <button type="button" class="ex">aisle blocked by boxes</button>
+</form>
+<div class="view" id="queueView">
+  <section class="stats" id="stats"></section>
+  <main>
+    <section class="queue">
+      <div class="filters" id="filters"></div>
+      <div class="list" id="list"><div class="empty">Loading incidents…</div></div>
+    </section>
+    <section class="detail" id="detail"><div class="empty">Select an incident to review the clip.</div></section>
+  </main>
+</div>
+<div class="view page" id="insightsView" hidden></div>
+<div class="view page" id="reportView" hidden></div>
+<script>
+const BASE = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
+const EVENT_LABEL = {
+  NEAR_MISS: "Near miss", PERSON_IN_PATH: "Person in vehicle path",
+  VEHICLE_CONFLICT: "Vehicles blocking each other", BLOCKED_AISLE: "Blocked aisle",
+  PALLET_IN_WALKWAY: "Pallet in walkway", CROWDING: "Unusual crowding",
+  RIDING_EQUIPMENT: "Riding on equipment", CLIMBING: "Climbing racks or loads", RUNNING: "Running on the floor",
+  PHONE_USE: "Phone use near traffic", NO_PPE: "Missing safety gear", UNSAFE_LOAD: "Unstable or overhead load",
+};
+const BEHAVIOR_CODES = ["RIDING_EQUIPMENT", "CLIMBING", "RUNNING", "PHONE_USE", "NO_PPE", "UNSAFE_LOAD"];
+// [filter value, card label, short label for the filter row]
+const TYPES = [["near_miss", "Near misses", "Near misses"], ["blocked", "Blocked aisles", "Blocked"],
+               ["crowding", "Crowding", "Crowding"], ["behavior", "Unsafe behavior", "Behavior"]];
+const RISKS = [["high", "High risk"], ["medium", "Medium risk"], ["low", "Low risk"]];
+
+const state = {
+  tab: "queue", type: "all", risk: "all", site: "all",
+  showAck: false, selected: null, cam: 0, moreAngles: false, showCaption: false,
+  mode: "incident", ask: null, askSel: 0, askBusy: false,
+  showBoxes: localStorage.getItem("aisle-boxes") !== "off",
+};
+let data = { incidents: [], stats: {} };
+let reviews = {};
+let insights = null, insightsSel = 0, report = null;
+let overlayRun = 0;
+const detCache = {};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtSec = (s) => { const t = Math.round(s || 0); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
+const fmtRange = (a, b) => `${fmtSec(a)}–${fmtSec(b)}`;
+const fmtGap = (g) => g == null ? "n/a" : g < 0.2 ? "< 0.2 m" : `${g.toFixed(1)} m`;
+const gapClass = (g) => g == null ? "" : g < 1 ? "close" : g < 3 ? "mid" : "far";
+const siteOf = (scene) => (scene || "").split(" · ")[0];
+const clipUrl = (src) => `${BASE}clip?source=${encodeURIComponent(src)}`;
+const fmtDur = (s) => {
+  s = Math.round(s || 0);
+  return s >= 60 ? `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ""}` : `${s} s`;
+};
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const reviewer = () => localStorage.getItem("aisle-reviewer") || "";
+const reviewLabel = (r) => r.status === "false_alarm" ? "false alarm" : "acknowledged";
+const reviewedCount = () => data.incidents.filter((i) => reviews[i.id]).length;
+const incById = (id) => data.incidents.find((i) => i.id === id);
+const COVERAGE_HELP = "Ingested: 5-second clips indexed from the warehouse cameras. Analysed for safety: clips whose AI " +
+  "description includes the safety checklist (near misses, blocking, crowding). The rest only have a general description.";
+const coverageText = () => {
+  const s = data.stats || {};
+  return `<strong>${s.segments_indexed ?? 0}</strong> clips ingested · <strong>${s.segments_analyzed ?? 0}</strong> analysed for safety`;
+};
+
+/* ---------- filtering: one rule set for cards, chips and the list ---------- */
+const inScope = (i) => (state.showAck || !reviews[i.id]) && (state.site === "all" || siteOf(i.scene) === state.site);
+const typeOk = (i, t = state.type) => t === "all" || i.categories.includes(t);
+const riskOk = (i, r = state.risk) => r === "all" || i.risk === r;
+const visible = () => data.incidents.filter((i) => inScope(i) && typeOk(i) && riskOk(i));
+const countIf = (pred) => data.incidents.filter((i) => inScope(i) && pred(i)).length;
+
+function setFilter(dim, value) {
+  state[dim] = state[dim] === value ? "all" : value;
+  render();
+}
+
+/* ---------- shared components ---------- */
+function riskBadge(risk, events) {
+  return events && events.length ? `<span class="badge ${risk || "low"}">${risk || "low"}</span>` : `<span class="badge none">no issue</span>`;
+}
+function eventChips(events) {
+  return (events || []).map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("");
+}
+function measureChips(view) {
+  if (!view || !view.events || !view.events.length) return "";
+  let html = "";
+  if (view.gap_status === "measured") html += `<span class="chip measure">${fmtGap(view.yolo_gap_m)} from vehicle</span>`;
+  if (view.gap_status === "inconclusive") html += `<span class="chip">distance unclear</span>`;
+  if (view.events.includes("CROWDING")) html += `<span class="chip measure">${view.crowd} people bunched (usual ${view.crowd_typical})</span>`;
+  return html;
+}
+const HOW_MEASURED = "Boxes come from an off-the-shelf object detector. It has no forklift or robot class, so vehicles are " +
+  "recognised as look-alike objects and may be missed in some frames. Distances are estimated from the video, " +
+  "using a person's height (about 1.7 m) as the ruler.";
+function viewBySource(source) {
+  for (const inc of data.incidents) {
+    const v = inc.views.find((x) => x.source === source);
+    if (v) return { inc, view: v, cam: inc.views.indexOf(v) };
+  }
+  return null;
+}
+function videoBlock(source) {
+  return `<div class="vwrap"><video id="player" src="${clipUrl(source)}" controls autoplay muted loop playsinline></video><canvas id="overlay"></canvas></div>
+    <div class="ovl"><label><input type="checkbox" id="boxesToggle" ${state.showBoxes ? "checked" : ""}> Show detection boxes</label>
+      <span class="muted info" title="${esc(HOW_MEASURED)}">How is this measured?</span><span class="muted" id="ovlNote"></span></div>`;
+}
+function seekPlayer(t) { const p = $("player"); if (p) { p.pause(); p.currentTime = Math.max(0, t || 0); } }
+
+function evidenceBox(view) {
+  return `<div class="box" id="evidence"><div class="lbl">Measurements · ${esc(view.camera)}</div><span class="muted">Measuring…</span></div>`;
+}
+function fillEvidence(view, clipStart, det) {
+  const box = $("evidence");
+  if (!box) return;
+  const said = view.gap ? `AI estimate: ${esc(view.gap)}` : "";
+  const join = (...parts) => parts.filter(Boolean).join(" · ");
+  let html = `<div class="lbl">Measured · ${esc(view.camera)}</div>`;
+  if (!det) {
+    html += `<span class="muted">${join("Not measured on this camera", said)}</span>`;
+  } else {
+    const c = det.closest;
+    if (c && view.gap_status === "inconclusive") {
+      html += `<div class="measure-row" title="The detector only recognised the vehicle in ${det.equipment_frames} of ${det.frames.length} frames, so its distance disagrees with the AI estimate. Watch the clip to judge.">
+           <span class="big unclear">Distance unclear</span>
+           <span class="muted">${join(said, `detector ${fmtGap(c.gap_m)}`, `vehicle seen in ${det.equipment_frames}/${det.frames.length} frames`)}</span>
+           <button data-seek="${c.t}">Jump to closest frame</button></div>`;
+    } else if (c) {
+      html += `<div class="measure-row"><span class="big ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span>
+           <span class="muted">${join(`closest to a vehicle at ${fmtSec(clipStart + c.t)}`, said)}</span>
+           <button data-seek="${c.t}">Jump to moment</button></div>`;
+    } else {
+      html += `<div class="measure-row"><span class="muted">${join("No vehicle near a person on this camera", said)}</span></div>`;
+    }
+    if (view.events && view.events.includes("CROWDING")) {
+      html += `<div class="measure-row" title="People within arm's reach of each other for over a second">
+           <span class="big group">${det.crowd} bunched</span>
+           <span class="muted">${join(`usual ${view.crowd_typical}`, `${det.people} in view`)}</span>
+           ${det.crowd_t != null ? `<button data-seek="${det.crowd_t}">Jump to group</button>` : ""}</div>`;
+    }
+  }
+  box.innerHTML = html;
+  box.querySelectorAll("button[data-seek]").forEach((b) => b.onclick = () => seekPlayer(+b.dataset.seek));
+}
+function captionBox(view) {
+  if (!view.narrative) return "";
+  const words = view.narrative.trim().split(/\s+/).length;
+  return `<details class="box caption" id="caption" ${state.showCaption ? "open" : ""}>
+    <summary><span class="lbl">Full AI description · ${esc(view.camera)}</span><span class="muted">${words} words</span></summary>
+    <div class="captxt">${esc(view.narrative)}</div></details>`;
+}
+function bindCaption() {
+  const d = $("caption");
+  if (d) d.ontoggle = () => { state.showCaption = d.open; };
+}
+
+/* ---------- overlay ---------- */
+async function loadDetections(source) {
+  if (!detCache[source]) {
+    detCache[source] = fetch(`${BASE}api/detections?source=${encodeURIComponent(source)}`)
+      .then((r) => r.ok ? r.json() : null).catch(() => null);
+  }
+  return detCache[source];
+}
+async function attachOverlay(source, onInfo, showGap = true) {
+  const run = ++overlayRun;
+  const toggle = $("boxesToggle");
+  if (toggle) toggle.onchange = () => { state.showBoxes = toggle.checked; localStorage.setItem("aisle-boxes", state.showBoxes ? "on" : "off"); };
+  const det = await loadDetections(source);
+  if (run !== overlayRun) return;
+  if (onInfo) onInfo(det);
+  if (!det) { if ($("ovlNote")) $("ovlNote").textContent = "· no detection boxes for this clip"; return; }
+  const [sh, sw] = det.shape;
+  const draw = () => {
+    if (run !== overlayRun) return;
+    const video = $("player"), canvas = $("overlay");
+    if (!video || !canvas) return;
+    const cw = video.clientWidth, ch = video.clientHeight;
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, cw, ch);
+    if (state.showBoxes && det.frames.length) {
+      const vw = video.videoWidth || sw, vh = video.videoHeight || sh;
+      const scale = Math.min(cw / vw, ch / vh), dw = vw * scale, dh = vh * scale;
+      const ox = (cw - dw) / 2, oy = (ch - dh) / 2, kx = dw / sw, ky = dh / sh;
+      const fr = det.frames[Math.min(det.frames.length - 1, Math.floor(video.currentTime * det.fps))];
+      const X = (x) => ox + x * kx, Y = (y) => oy + y * ky;
+      const close = showGap && fr.gap_m != null && fr.gap_m < 1;
+      ctx.lineWidth = 2.5; ctx.font = "bold 13px system-ui";
+      for (const b of fr.e) {
+        ctx.setLineDash(fr.held ? [6, 5] : []);
+        ctx.strokeStyle = "#faad14"; ctx.strokeRect(X(b[0]), Y(b[1]), (b[2] - b[0]) * kx, (b[3] - b[1]) * ky);
+        ctx.fillStyle = "#faad14"; ctx.fillText("vehicle", X(b[0]) + 4, Y(b[1]) - 6);
+      }
+      ctx.setLineDash([]);
+      const group = new Set(fr.c && fr.c.length >= 4 ? fr.c : []);
+      fr.p.forEach((b, n) => {
+        ctx.strokeStyle = close ? "#ff4d4f" : group.has(n) ? "#b37feb" : "#52c41a";
+        ctx.strokeRect(X(b[0]), Y(b[1]), (b[2] - b[0]) * kx, (b[3] - b[1]) * ky);
+        if (!group.size) { ctx.fillStyle = ctx.strokeStyle; ctx.fillText("person", X(b[0]) + 4, Y(b[1]) - 6); }
+      });
+      if (group.size) {
+        const gb = [...group].map((n) => fr.p[n]);
+        const x1 = Math.min(...gb.map((b) => b[0])), y1 = Math.min(...gb.map((b) => b[1]));
+        const label = `group of ${group.size}`;
+        ctx.fillStyle = "rgba(0,0,0,.7)"; ctx.fillRect(X(x1) - 2, Y(y1) - 22, ctx.measureText(label).width + 8, 18);
+        ctx.fillStyle = "#b37feb"; ctx.fillText(label, X(x1) + 2, Y(y1) - 8);
+      }
+      if (showGap && fr.line) {
+        const [x1, y1, x2, y2] = fr.line;
+        ctx.strokeStyle = close ? "#ff4d4f" : "#ffffff"; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(X(x1), Y(y1)); ctx.lineTo(X(x2), Y(y2)); ctx.stroke(); ctx.setLineDash([]);
+        const label = fmtGap(fr.gap_m), tx = (X(x1) + X(x2)) / 2 + 8, ty = (Y(y1) + Y(y2)) / 2;
+        ctx.fillStyle = "rgba(0,0,0,.7)"; ctx.fillRect(tx - 4, ty - 15, ctx.measureText(label).width + 8, 20);
+        ctx.fillStyle = close ? "#ff4d4f" : "#ffffff"; ctx.fillText(label, tx, ty);
+      }
+    }
+    requestAnimationFrame(draw);
+  };
+  requestAnimationFrame(draw);
+}
+
+/* ---------- summary cards (each card = what you'd see after clicking it) ---------- */
+function renderStats() {
+  const card = (label, value, cls, dim, val) => {
+    const on = dim && state[dim] === val;
+    return `<button class="stat ${cls} ${on ? "on" : ""}" data-dim="${dim}" data-val="${val}" title="${on ? "Clear this filter" : `Show ${label.toLowerCase()}`}">
+      <div class="v">${value}</div><div class="k">${label}</div></button>`;
+  };
+  const scopeLabel = state.showAck ? "All incidents" : "Open incidents";
+  $("stats").innerHTML =
+    `<button class="stat ${state.type === "all" && state.risk === "all" ? "on" : ""}" data-reset="1" title="Clear type and risk filters">
+       <div class="v">${countIf(() => true)}</div><div class="k">${scopeLabel}</div></button>` +
+    RISKS.map(([r, label]) => card(label, countIf((i) => typeOk(i) && i.risk === r), r, "risk", r)).join("") +
+    TYPES.map(([t, label]) => card(label, countIf((i) => riskOk(i) && i.categories.includes(t)), "", "type", t)).join("");
+  $("stats").querySelectorAll("button[data-dim]").forEach((b) => b.onclick = () => setFilter(b.dataset.dim, b.dataset.val));
+  $("stats").querySelector("button[data-reset]").onclick = () => { state.type = "all"; state.risk = "all"; render(); };
+}
+
+/* ---------- queue filters ---------- */
+function renderFilters() {
+  const sites = [...new Set(data.incidents.map((i) => siteOf(i.scene)))].sort();
+  const group = (label, dim, options, allLabel) => `<div class="fgroup"><span class="flabel">${label}</span>` +
+    [["all", allLabel], ...options].map(([v, l]) => `<button class="${state[dim] === v ? "on" : ""}" data-dim="${dim}" data-val="${esc(v)}">${esc(l)}</button>`).join("") + `</div>`;
+  const shown = visible().length, total = data.incidents.length;
+  const filtered = state.type !== "all" || state.risk !== "all" || state.site !== "all";
+  $("filters").innerHTML =
+    group("Type", "type", TYPES.map(([v, , short]) => [v, short]), "All") +
+    group("Risk", "risk", RISKS.map(([v, l]) => [v, l.replace(" risk", "")]), "All") +
+    (sites.length > 1 ? group("Site", "site", sites.map((s) => [s, s]), "All") : "") +
+    `<div class="fstatus"><span>Showing ${shown} of ${total}</span>
+       <label><input type="checkbox" id="ackToggle" ${state.showAck ? "checked" : ""}> Include reviewed (${reviewedCount()})</label>
+       <span class="spacer"></span>${filtered ? `<button id="clearFilters">Clear filters</button>` : ""}</div>`;
+  $("filters").querySelectorAll("button[data-dim]").forEach((b) => b.onclick = () => {
+    state[b.dataset.dim] = b.dataset.val; render();
+  });
+  $("ackToggle").onchange = (e) => { state.showAck = e.target.checked; render(); };
+  if ($("clearFilters")) $("clearFilters").onclick = () => { state.type = state.risk = state.site = "all"; render(); };
+}
+
+/* ---------- queue ---------- */
+function renderList() {
+  const items = visible();
+  if (!items.length) {
+    $("list").innerHTML = `<div class="empty">${data.incidents.length ? "No incidents match these filters." : "No incidents flagged yet. Clips still being analyzed will appear here."}</div>`;
+    return;
+  }
+  $("list").innerHTML = items.map((i) => {
+    const top = i.views.find((v) => v.events.length) || i.views[0];
+    return `
+    <div class="card ${state.mode === "incident" && state.selected === i.id ? "sel" : ""} ${reviews[i.id] ? "ack" : ""}" data-id="${i.id}">
+      <div class="row">${riskBadge(i.risk, i.events)}<strong>${esc(i.scene)}</strong>
+        <span class="when">${fmtRange(i.start_sec, i.end_sec)}</span></div>
+      <div class="sum">${esc(i.summary)}</div>
+      <div class="chips">${eventChips(i.events)}${measureChips(top)}${reviews[i.id] ? `<span class="chip">${reviewLabel(reviews[i.id])}</span>` : ""}</div>
+    </div>`;
+  }).join("");
+  $("list").querySelectorAll(".card").forEach((c) => c.onclick = () => openIncident(c.dataset.id));
+  const sel = $("list").querySelector(".card.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
+function openIncident(id, cam = 0) {
+  state.mode = "incident"; state.selected = id; state.cam = cam; state.moreAngles = false;
+  render();
+}
+
+function viewLabel(i, v) {
+  return i.moments > 1 ? `${v.camera} · ${fmtSec(v.start_sec)}` : v.camera;
+}
+function angleButtons(i) {
+  if (i.views.length < 2) return "";
+  const btn = (v) => {
+    const n = i.views.indexOf(v);
+    return `<button class="${n === state.cam ? "on" : ""}" data-cam="${n}" title="${v.events.length ? v.events.map((e) => EVENT_LABEL[e]).join(", ") : "Nothing flagged from this camera"}">
+      <span class="dot ${v.events.length ? v.risk : ""}"></span>${esc(viewLabel(i, v))}</button>`;
+  };
+  const flagged = i.views.filter((v) => v.events.length), others = i.views.filter((v) => !v.events.length);
+  const open = state.moreAngles || others.includes(i.views[state.cam]);
+  return `<div class="toolbar">${flagged.map(btn).join("")}
+    ${others.length ? (open ? others.map(btn).join("") : `<button id="moreAngles">+${others.length} more camera${others.length > 1 ? "s" : ""}</button>`) : ""}</div>`;
+}
+
+/* ---------- incident detail ---------- */
+function renderIncident() {
+  const i = data.incidents.find((x) => x.id === state.selected);
+  if (!i) {
+    const none = data && data.incidents.length && !visible().length;
+    $("detail").innerHTML = none
+      ? `<div class="empty">No incidents match these filters.<div style="margin-top:10px"><button id="clearFiltersDetail">Clear filters</button></div></div>`
+      : `<div class="empty">Select an incident to review the clip.</div>`;
+    if ($("clearFiltersDetail")) $("clearFiltersDetail").onclick = () => { state.type = state.risk = state.site = "all"; render(); };
+    return;
+  }
+  const v = i.views[state.cam] || i.views[0];
+  const rv = reviews[i.id];
+  const meta = [
+    i.cameras > 1 ? `Flagged on ${i.flagging_cameras} of ${i.cameras} cameras` : esc(i.views[0].camera),
+    i.moments > 1 ? `${i.moments} back-to-back moments` : "",
+    rv ? reviewLabel(rv) : "",
+  ].filter(Boolean).join(" · ");
+  const backToAsk = state.ask ? `<button id="backToAsk">Back to search results</button>` : "";
+  const reviewHtml = rv
+    ? `<div class="box reviewed ${rv.status === "false_alarm" ? "fa" : ""}">
+         <div class="lbl">${rv.status === "false_alarm" ? "Marked as false alarm" : "Acknowledged"}</div>
+         ${rv.by ? `${esc(rv.by)} · ` : ""}${new Date(rv.at * 1000).toLocaleString()}
+         ${rv.note ? `<div class="note">“${esc(rv.note)}”</div>` : ""}
+         <div class="actions"><button id="reopen">Reopen</button>${backToAsk}</div></div>`
+    : `<div class="review">
+         <input id="note" maxlength="500" placeholder="Note for the team (optional)">
+         <div class="actions">
+           <button id="ack" class="primary">Acknowledge</button>
+           <button id="falseAlarm" title="Nothing unsafe happened; helps tune the detector">False alarm</button>
+           <input id="reviewer" maxlength="60" placeholder="Your name" value="${esc(reviewer())}">
+           ${backToAsk}
+         </div></div>`;
+  $("detail").innerHTML = `
+    <h2>${riskBadge(i.risk, i.events)} ${esc(i.scene)} · ${fmtRange(i.start_sec, i.end_sec)}</h2>
+    <div class="meta">${meta}</div>
+    <div class="split">
+      <div class="decision">
+        <div class="box"><div class="lbl">What happened</div>${esc(i.summary)}<div class="chips">${eventChips(i.events)}${measureChips(v)}</div></div>
+        ${i.action ? `<div class="box action"><div class="lbl">Suggested action</div>${esc(i.action)}</div>` : ""}
+        ${reviewHtml}
+      </div>
+      <div class="media">${videoBlock(v.source)}${angleButtons(i)}</div>
+    </div>
+    ${evidenceBox(v)}
+    ${captionBox(v)}`;
+  $("detail").querySelectorAll("button[data-cam]").forEach((b) => b.onclick = () => { state.cam = +b.dataset.cam; renderIncident(); renderList(); });
+  if ($("moreAngles")) $("moreAngles").onclick = () => { state.moreAngles = true; renderIncident(); };
+  const decide = (status) => {
+    const note = $("note") ? $("note").value.trim() : "";
+    if (status && !state.showAck) selectNextAfter(i.id);
+    setReview(i.id, status, note);
+  };
+  if ($("ack")) $("ack").onclick = () => decide("acknowledged");
+  if ($("falseAlarm")) $("falseAlarm").onclick = () => decide("false_alarm");
+  if ($("reopen")) $("reopen").onclick = () => decide(null);
+  if ($("backToAsk")) $("backToAsk").onclick = () => { state.mode = "ask"; render(); };
+  bindCaption();
+  attachOverlay(v.source, (det) => fillEvidence(v, v.start_sec, det), v.gap_status !== "inconclusive");
+}
+
+function selectNextAfter(id) {
+  const items = visible();
+  const idx = items.findIndex((x) => x.id === id);
+  const next = items[idx + 1] || items[idx - 1];
+  state.selected = next && next.id !== id ? next.id : null;
+  state.cam = 0; state.moreAngles = false;
+}
+
+async function setReview(id, status, note) {
+  const by = ($("reviewer") && $("reviewer").value.trim()) || reviewer();
+  if (by) localStorage.setItem("aisle-reviewer", by);
+  const before = reviews[id];
+  if (status) reviews[id] = { status, note, by, at: Date.now() / 1000 }; else delete reviews[id];
+  render();
+  try {
+    const r = await fetch(`${BASE}api/review`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status, note, by }) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    reviews = (await r.json()).reviews;
+  } catch (e) {
+    if (before) reviews[id] = before; else delete reviews[id];
+    showWarn(`Could not save the review (${e.message}). Please try again.`);
+  }
+  render();
+}
+
+function showWarn(text) {
+  $("warn").hidden = !text;
+  $("warn").textContent = text || "";
+}
+
+/* ---------- tabs ---------- */
+function setTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  $("queueView").hidden = tab !== "queue";
+  $("insightsView").hidden = tab !== "insights";
+  $("reportView").hidden = tab !== "report";
+  $("kbdHint").hidden = tab !== "queue";
+  history.replaceState(null, "", tab === "queue" ? location.pathname : `#${tab}`);
+  if (tab !== "queue" && $("player")) $("player").pause();
+  if (tab === "queue") { lastDetailKey = null; render(); }
+  if (tab === "insights") { renderInsights(); loadInsights(); }
+  if (tab === "report") { renderReport(); loadInsights(); loadReport(); }
+}
+
+function goToIncident(id) {
+  if (!incById(id)) return;
+  if (!visible().some((i) => i.id === id)) {
+    state.type = state.risk = state.site = "all";
+    if (reviews[id]) state.showAck = true;
+  }
+  state.mode = "incident"; state.selected = id; state.cam = 0; state.moreAngles = false;
+  setTab("queue");
+}
+function incChip(id) {
+  const i = incById(id);
+  return i ? `<button class="incchip" data-open="${id}"><span class="dot ${i.risk}"></span>${esc(i.scene)} · ${fmtRange(i.start_sec, i.end_sec)}${reviews[id] ? ` · ${reviewLabel(reviews[id])}` : ""}</button>` : "";
+}
+function bindOpen(root) {
+  root.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => goToIncident(b.dataset.open));
+}
+
+/* ---------- insights ---------- */
+async function loadInsights() {
+  try {
+    const r = await fetch(`${BASE}api/insights`, { cache: "no-store" });
+    insights = await r.json();
+  } catch (e) {
+    insights = insights || { error: String(e), hotspots: [], sites: [], causes: [] };
+  }
+  if (state.tab === "insights") renderInsights();
+  if (state.tab === "report") renderReport();
+}
+
+function renderInsights() {
+  const root = $("insightsView");
+  if (!insights) { root.innerHTML = `<div class="empty">Loading insights…</div>`; return; }
+  const inc = data.incidents;
+  const reviewed = inc.filter((i) => reviews[i.id]);
+  const falseAlarms = reviewed.filter((i) => reviews[i.id].status === "false_alarm").length;
+  const hot = insights.hotspots || [];
+  insightsSel = Math.min(insightsSel, Math.max(0, hot.length - 1));
+  const spot = hot[insightsSel];
+  const behaviors = {};
+  inc.forEach((i) => i.events.filter((e) => BEHAVIOR_CODES.includes(e))
+    .forEach((e) => (behaviors[e] = behaviors[e] || []).push(i.id)));
+
+  root.innerHTML = `
+    <section class="kpis">
+      ${(insights.sites || []).map((s) => `<div class="stat info" title="Time in analysed footage when a person was within about 1 m of a vehicle (${s.close_per_hour} s per hour of footage)">
+        <div class="v">${fmtDur(s.close_sec)}</div><div class="k">${esc(s.site)} · close to vehicles</div>
+        <div class="muted">${s.footage_sec ? Math.round(100 * s.close_sec / s.footage_sec) : 0}% of ${fmtDur(s.footage_sec)} of footage</div></div>`).join("")}
+      <div class="stat info" title="${esc(COVERAGE_HELP)}"><div class="v">${data.stats.segments_analyzed ?? 0} / ${data.stats.segments_indexed ?? 0}</div>
+        <div class="k">Clips analysed for safety</div>
+        <div class="muted">${(data.stats.segments_indexed ?? 0) - (data.stats.segments_analyzed ?? 0)} have only a general description</div></div>
+      <div class="stat info"><div class="v">${reviewed.length} / ${inc.length}</div><div class="k">Incidents reviewed</div>
+        <div class="muted">${plural(falseAlarms, "false alarm")}</div></div>
+      <div class="stat info"><div class="v">${new Set(Object.values(behaviors).flat()).size}</div>
+        <div class="k">Incidents with unsafe behavior</div><div class="muted">from the AI descriptions</div></div>
+    </section>
+
+    <section class="panel"><h3>Hotspots <span class="muted">where people got close to vehicles or bunched up</span></h3>
+      ${hot.length ? `<div class="hot">
+        <div class="hotlist">${hot.map((s, n) => `<button class="hotrow ${n === insightsSel ? "on" : ""}" data-spot="${n}">
+          <strong>${esc(s.spot)}</strong>
+          <span class="muted">${plural(s.incidents.length, "incident")} · ${fmtDur(s.close_sec)} close to vehicles${s.crowd_sec ? ` · ${fmtDur(s.crowd_sec)} crowded` : ""}</span></button>`).join("")}</div>
+        <div>
+          <div class="heatwrap"><video id="heatVideo" muted playsinline preload="auto" src="${clipUrl(spot.still)}"></video><canvas id="heatCanvas"></canvas></div>
+          <div class="legend"><span><span class="swatch" style="background:var(--high)"></span>person close to a vehicle</span>
+            <span><span class="swatch" style="background:var(--group)"></span>people bunched together</span>
+            <span>${plural(spot.points.length, "sample")} over ${fmtDur(spot.footage_sec)} of footage</span></div>
+          <div class="incchips">${spot.incidents.map(incChip).join("") || `<span class="muted">No incidents flagged here; the heat comes from moments below the alert threshold.</span>`}</div>
+        </div></div>` : `<div class="muted">No close calls or crowding measured yet.</div>`}
+    </section>
+
+    <section class="panel"><h3>Recurring causes <span class="muted">incidents grouped by what keeps going wrong</span></h3>
+      ${(insights.causes || []).length ? `<div class="causes">${insights.causes.map((c) => `<div class="box">
+          <div class="lbl">${plural(c.ids.length, "incident")}</div><strong>${esc(c.cause)}</strong>
+          <div class="muted" style="margin:4px 0 8px">${esc(c.why)}</div>
+          ${c.fix ? `<div style="margin-bottom:8px"><span class="muted">Fix:</span> ${esc(c.fix)}</div>` : ""}
+          <div class="incchips">${c.ids.map(incChip).join("")}</div></div>`).join("")}</div>`
+        : `<div class="muted">${inc.length < 2 ? "Needs at least two incidents." : "Grouping incidents… check back in a minute."}</div>`}
+    </section>
+
+    <section class="panel"><h3>Unsafe behavior <span class="muted">riding equipment, climbing, running, phones, missing gear, unstable loads</span></h3>
+      ${Object.keys(behaviors).length ? Object.entries(behaviors).map(([code, ids]) => `<div style="margin-bottom:10px">
+          <strong>${EVENT_LABEL[code]}</strong> <span class="muted">· ${plural(ids.length, "incident")}</span>
+          <div class="incchips" style="margin-top:6px">${ids.map(incChip).join("")}</div></div>`).join("")
+        : `<div class="muted">None described in the footage so far.</div>`}
+    </section>`;
+
+  root.querySelectorAll("[data-spot]").forEach((b) => b.onclick = () => { insightsSel = +b.dataset.spot; renderInsights(); });
+  bindOpen(root);
+  if (spot) drawHeat(spot);
+}
+
+function drawHeat(spot) {
+  const video = $("heatVideo"), canvas = $("heatCanvas");
+  const paint = () => {
+    canvas.width = video.clientWidth; canvas.height = video.clientHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = "lighter";
+    const r = Math.max(16, canvas.width / 28);
+    for (const [x, y, kind] of spot.points) {
+      const cx = x * canvas.width, cy = y * canvas.height;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      const rgb = kind ? "179,127,235" : "255,77,79";
+      g.addColorStop(0, `rgba(${rgb},.28)`); g.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = g; ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r);
+    }
+    ctx.globalCompositeOperation = "source-over";
+  };
+  video.onloadeddata = () => { video.currentTime = spot.still_t || 0; };
+  video.onseeked = paint;
+}
+
+/* ---------- shift report ---------- */
+async function loadReport() {
+  report = null;
+  renderReport();
+  try {
+    const r = await fetch(`${BASE}api/report`, { cache: "no-store" });
+    report = await r.json();
+  } catch (e) {
+    report = { error: String(e), highlights: [], actions: [] };
+  }
+  if (state.tab === "report") renderReport();
+}
+
+function renderReport() {
+  const inc = data.incidents;
+  const s = data.stats || {};
+  const sites = [...new Set(inc.map((i) => siteOf(i.scene)))];
+  const status = (i) => reviews[i.id] ? reviews[i.id].status : "open";
+  const count = (pred) => inc.filter(pred).length;
+  const rows = TYPES.map(([t, label]) => {
+    const n = (r) => count((i) => i.categories.includes(t) && (!r || i.risk === r));
+    return `<tr><td>${label}</td><td class="n">${n("high")}</td><td class="n">${n("medium")}</td><td class="n">${n("low")}</td><td class="n"><strong>${n()}</strong></td></tr>`;
+  }).join("");
+  const writing = `<span class="muted">Writing summary…</span>`;
+  const r = report;
+  const hot = ((insights && insights.hotspots) || []).slice(0, 3);
+  const causes = (insights && insights.causes) || [];
+  $("reportView").innerHTML = `<div class="report">
+    <div class="row noprint" style="margin-bottom:12px"><span class="spacer"></span>
+      <button id="printReport" class="primary">Print or save as PDF</button></div>
+    <section class="panel">
+      <div class="muted">Shift report · ${esc(sites.join(", ") || "Warehouse cameras")} · ${new Date().toLocaleString()}</div>
+      <div class="headline">${r ? (esc(r.headline) || `<span class="muted">Summary unavailable right now; the numbers below are complete.</span>`) : writing}</div>
+      <table><thead><tr><th>Incident type</th><th>High</th><th>Medium</th><th>Low</th><th>Total</th></tr></thead><tbody>${rows}
+        <tr><td><strong>All incidents</strong></td><td class="n">${count((i) => i.risk === "high")}</td><td class="n">${count((i) => i.risk === "medium")}</td>
+        <td class="n">${count((i) => i.risk === "low")}</td><td class="n"><strong>${inc.length}</strong></td></tr></tbody></table>
+      <div class="muted" style="margin-top:8px">Review status: ${count((i) => status(i) === "open")} open · ${count((i) => status(i) === "acknowledged")} acknowledged ·
+        ${plural(count((i) => status(i) === "false_alarm"), "false alarm")}</div>
+    </section>
+    <section class="panel"><h3>Highlights</h3>${r ? (r.highlights.length ? `<ul>${r.highlights.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : `<span class="muted">Unavailable.</span>`) : writing}</section>
+    <section class="panel"><h3>Recommended actions</h3>${r ? (r.actions.length ? `<ol>${r.actions.map((a) => `<li>${esc(a)}</li>`).join("")}</ol>` : `<span class="muted">Unavailable.</span>`) : writing}</section>
+    <section class="panel"><h3>Top incidents</h3>
+      ${inc.slice(0, 5).map((i) => `<div class="item" data-open="${i.id}">
+        <div class="row">${riskBadge(i.risk, i.events)}<strong>${esc(i.scene)} · ${fmtRange(i.start_sec, i.end_sec)}</strong>
+          <span class="when">${status(i) === "open" ? "open" : reviewLabel(reviews[i.id])}</span></div>
+        <div style="margin-top:4px">${esc(i.summary)}</div>
+        ${i.action ? `<div class="muted" style="margin-top:2px">Action: ${esc(i.action)}</div>` : ""}</div>`).join("") || `<span class="muted">No incidents.</span>`}
+    </section>
+    <section class="panel"><h3>Hotspots</h3>
+      ${hot.length ? `<table><thead><tr><th>Where</th><th>Incidents</th><th>Close to vehicles</th><th>Crowded</th></tr></thead><tbody>
+        ${hot.map((h) => `<tr><td>${esc(h.spot)}</td><td class="n">${h.incidents.length}</td><td class="n">${fmtDur(h.close_sec)}</td><td class="n">${fmtDur(h.crowd_sec)}</td></tr>`).join("")}
+        </tbody></table>` : `<span class="muted">Loading…</span>`}
+    </section>
+    ${causes.length ? `<section class="panel"><h3>Recurring causes</h3><ul>${causes.map((c) =>
+      `<li><strong>${esc(c.cause)}</strong> (${plural(c.ids.length, "incident")})${c.fix ? `: ${esc(c.fix)}` : ""}</li>`).join("")}</ul></section>` : ""}
+    <div class="muted">Based on ${s.segments_indexed ?? 0} ingested clips, ${s.segments_analyzed ?? 0} of them analysed for safety.
+      Distances are estimates from the video; open an incident to check the clip.</div>
+  </div>`;
+  $("printReport").onclick = () => window.print();
+  $("reportView").querySelectorAll("[data-open]").forEach((el) => el.onclick = () => goToIncident(el.dataset.open));
+}
+
+/* ---------- search footage ---------- */
+function mdLite(text) {
+  const body = (text || "").replace(/^\s*#*\s*(\*\*)?answer:?(\*\*)?:?\s*\n/i, "").replace(/^#+\s*(.*)$/gm, "**$1**");
+  const lines = esc(body).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").split("\n");
+  let html = "", inList = false;
+  for (const line of lines) {
+    const m = line.match(/^\s*[-*]\s+(.*)/);
+    if (m) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${m[1]}</li>`; continue; }
+    if (inList) { html += "</ul>"; inList = false; }
+    if (line.trim()) html += `<div>${line}</div>`;
+  }
+  return html + (inList ? "</ul>" : "");
+}
+
+function renderAsk() {
+  const back = `<button id="backToQueue">Back to incidents</button>`;
+  if (state.askBusy) { $("detail").innerHTML = `<div class="empty">Searching the warehouse cameras for “${esc($("askInput").value)}”…</div>`; return; }
+  const r = state.ask;
+  const head = `<h2>Search results</h2><div class="meta">“${esc(r.question)}”${r.clips ? ` · ${r.clips.length} matching moment${r.clips.length === 1 ? "" : "s"} across all warehouse footage` : ""}</div>`;
+  if (r.error || !r.clips.length) {
+    $("detail").innerHTML = head + `<div class="empty">${r.error ? `Search failed: ${esc(r.error)}` : "No matching moments. Try different wording."}</div><div class="toolbar">${back}</div>`;
+    $("backToQueue").onclick = backToQueue;
+    return;
+  }
+  const c = r.clips[state.askSel] || r.clips[0];
+  const match = viewBySource(c.source);
+  const view = match ? match.view : { camera: c.camera, events: c.events, risk: c.risk, narrative: c.narrative };
+  $("detail").innerHTML = head + `
+    <div class="split">
+      <div class="decision">
+        <div class="box answer"><div class="lbl">Answer</div>${mdLite(r.answer)}</div>
+        <div class="actions">${match ? `<button id="openInc" class="primary">Open incident</button>` : ""}${back}</div>
+      </div>
+      <div class="media">
+        <div class="row" style="margin-bottom:8px">${riskBadge(view.risk, view.events)}<strong>${esc(c.scene)} · ${esc(c.camera)}</strong><span class="muted">${fmtRange(c.start_sec, c.end_sec)}</span></div>
+        ${videoBlock(c.source)}
+      </div>
+    </div>
+    ${evidenceBox(view)}
+    ${captionBox(view)}
+    <div class="box"><div class="lbl">Matching clips</div><div class="hits">${r.clips.map((h, n) => {
+      const m = viewBySource(h.source);
+      const hv = m ? m.view : h;
+      return `<button class="hit ${n === state.askSel ? "on" : ""}" data-n="${n}">
+        <span class="score" title="How closely this moment matches your search">${Math.round((h.similarity ?? 0) * 100)}%</span>
+        <span class="dot ${hv.events && hv.events.length ? hv.risk : ""}" style="margin-top:6px"></span>
+        <span><strong>${esc(h.scene)} · ${esc(h.camera)}</strong> <span class="when">${fmtRange(h.start_sec, h.end_sec)}</span>
+        <div class="chips" style="margin:2px 0">${eventChips(hv.events)}${measureChips(m && m.view)}</div>
+        <div class="txt">${esc(h.narrative || "")}</div></span></button>`;
+    }).join("")}</div></div>`;
+  $("detail").querySelectorAll(".hit").forEach((b) => b.onclick = () => { state.askSel = +b.dataset.n; renderAsk(); });
+  $("backToQueue").onclick = backToQueue;
+  if (match) $("openInc").onclick = () => openIncident(match.inc.id, match.cam);
+  bindCaption();
+  attachOverlay(c.source, (det) => fillEvidence(view, c.start_sec, det), view.gap_status !== "inconclusive");
+}
+
+function backToQueue() {
+  state.mode = "incident";
+  render();
+}
+
+async function ask(question) {
+  question = question.trim();
+  if (!question || state.askBusy) return;
+  $("askInput").value = question;
+  state.mode = "ask"; state.askBusy = true; state.askSel = 0;
+  $("askBtn").disabled = true;
+  state.tab === "queue" ? render() : setTab("queue");
+  try {
+    const r = await fetch(`${BASE}api/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
+    const body = await r.json();
+    state.ask = r.ok ? body : { question, error: body.error || `HTTP ${r.status}`, clips: [] };
+  } catch (e) {
+    state.ask = { question, error: String(e), clips: [] };
+  }
+  state.askBusy = false;
+  $("askBtn").disabled = false;
+  if (state.mode === "ask") render();
+}
+
+/* ---------- top-level render ---------- */
+function ensureSelection() {
+  if (state.mode !== "incident") return;
+  const items = visible();
+  if (!items.some((i) => i.id === state.selected)) {
+    state.selected = items.length ? items[0].id : null;
+    state.cam = 0;
+  }
+}
+
+let lastDetailKey = null;
+function renderDetail(force = false) {
+  const key = state.mode === "ask"
+    ? `ask|${state.askBusy}|${state.ask && state.ask.question}|${state.askSel}`
+    : `inc|${state.selected}|${state.cam}|${state.moreAngles}|${JSON.stringify(reviews[state.selected] || null)}|${!!state.ask}`;
+  if (!force && key === lastDetailKey && $("player")) return;
+  lastDetailKey = key;
+  state.mode === "ask" ? renderAsk() : renderIncident();
+}
+
+function render() {
+  ensureSelection();
+  renderStats(); renderFilters(); renderList();
+  if (state.tab === "queue") renderDetail();
+}
+
+async function load() {
+  try {
+    const r = await fetch(`${BASE}api/board`, { cache: "no-store" });
+    data = await r.json();
+    reviews = data.reviews || {};
+    const when = data.updated ? new Date(data.updated * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "not yet";
+    $("sub").innerHTML = `<span title="${esc(COVERAGE_HELP)}">${coverageText()}</span> · updated ${when}`;
+    showWarn(data.error ? `Last refresh failed: ${data.error}` : "");
+    render();
+  } catch (e) {
+    $("sub").textContent = "Could not reach the board API";
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  if (state.tab !== "queue" || e.target.matches?.("input, textarea") || !["ArrowDown", "ArrowUp"].includes(e.key)) return;
+  const items = visible();
+  if (!items.length) return;
+  const idx = state.mode === "incident" ? items.findIndex((i) => i.id === state.selected) : -1;
+  const next = items[Math.max(0, Math.min(items.length - 1, idx + (e.key === "ArrowDown" ? 1 : -1)))];
+  if (next) { e.preventDefault(); openIncident(next.id); }
+});
+$("askForm").onsubmit = (e) => { e.preventDefault(); ask($("askInput").value); };
+document.querySelectorAll(".ask .ex").forEach((b) => b.onclick = () => ask(b.textContent));
+$("refresh").onclick = async () => {
+  const btn = $("refresh");
+  btn.disabled = true; btn.textContent = "Refreshing…";
+  try { await fetch(`${BASE}api/refresh`, { method: "POST" }); } catch (e) { /* load() reports reachability */ }
+  setTimeout(async () => {
+    await load();
+    if (state.tab === "insights") loadInsights();
+    if (state.tab === "report") loadReport();
+    btn.disabled = false; btn.textContent = "Refresh";
+  }, 5000);
+};
+document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => setTab(b.dataset.tab));
+function showThemeButton() {
+  const light = document.documentElement.dataset.theme === "light";
+  $("theme").textContent = light ? "☾" : "☀";
+  $("theme").title = `Switch to ${light ? "dark" : "light"} mode`;
+}
+$("theme").onclick = () => {
+  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("theme", next);
+  showThemeButton();
+};
+showThemeButton();
+load().then(() => { const tab = location.hash.slice(1); if (tab === "insights" || tab === "report") setTab(tab); });
+setInterval(load, 30000);
+</script>
+</body>
+</html>
