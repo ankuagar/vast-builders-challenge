@@ -95,7 +95,15 @@
   .box { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
   .box .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
   .box.action { border-color: rgba(62,166,255,.4); }
-  .measure-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .measure-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .measure-row:last-child { margin-bottom: 0; }
+  details.caption { padding: 8px 14px; }
+  details.caption summary { cursor: pointer; display: flex; align-items: baseline; gap: 10px; list-style: none; }
+  details.caption summary::-webkit-details-marker { display: none; }
+  details.caption summary::before { content: "▸"; color: var(--muted); }
+  details.caption[open] summary::before { content: "▾"; }
+  details.caption summary .lbl { margin: 0; }
+  details.caption .captxt { margin-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
   .measure-row button { font-size: 12px; padding: 2px 8px; }
   .big { font-size: 20px; font-weight: 700; }
   .big.close { color: var(--high); } .big.mid { color: var(--medium); } .big.far { color: var(--low); } .big.group { color: var(--group); }
@@ -207,7 +215,7 @@ const RISKS = [["high", "High risk"], ["medium", "Medium risk"], ["low", "Low ri
 
 const state = {
   tab: "queue", type: "all", risk: "all", site: "all",
-  showAck: false, selected: null, cam: 0, moreAngles: false,
+  showAck: false, selected: null, cam: 0, moreAngles: false, showCaption: false,
   mode: "incident", ask: null, askSel: 0, askBusy: false,
   showBoxes: localStorage.getItem("aisle-boxes") !== "off",
 };
@@ -291,28 +299,29 @@ function evidenceBox(view) {
 function fillEvidence(view, clipStart, det) {
   const box = $("evidence");
   if (!box) return;
-  const said = view.gap ? `The AI description says <strong>${esc(view.gap)}</strong>.` : "The AI description gives no distance.";
-  let html = `<div class="lbl">Measurements · ${esc(view.camera)}</div>`;
+  const said = view.gap ? `AI estimate: ${esc(view.gap)}` : "";
+  const join = (...parts) => parts.filter(Boolean).join(" · ");
+  let html = `<div class="lbl">Measured · ${esc(view.camera)}</div>`;
   if (!det) {
-    html += `<span class="muted">No measurements for this clip. ${said}</span>`;
+    html += `<span class="muted">${join("Not measured on this camera", said)}</span>`;
   } else {
     const c = det.closest;
     if (c && view.gap_status === "inconclusive") {
-      html += `<div class="measure-row"><span class="big unclear">Distance unclear</span>
-           <span class="muted">${said} The detector only recognised the vehicle in ${det.equipment_frames} of ${det.frames.length} frames
-           and measured ${fmtGap(c.gap_m)}, so watch the clip to judge.</span>
+      html += `<div class="measure-row" title="The detector only recognised the vehicle in ${det.equipment_frames} of ${det.frames.length} frames, so its distance disagrees with the AI estimate. Watch the clip to judge.">
+           <span class="big unclear">Distance unclear</span>
+           <span class="muted">${join(said, `detector ${fmtGap(c.gap_m)}`, `vehicle seen in ${det.equipment_frames}/${det.frames.length} frames`)}</span>
            <button data-seek="${c.t}">Jump to closest frame</button></div>`;
     } else if (c) {
       html += `<div class="measure-row"><span class="big ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span>
-           <span class="muted">closest a person got to a vehicle, at ${fmtSec(clipStart + c.t)}</span>
-           <button data-seek="${c.t}">Jump to moment</button></div>
-           <div class="muted">${said}</div>`;
+           <span class="muted">${join(`closest to a vehicle at ${fmtSec(clipStart + c.t)}`, said)}</span>
+           <button data-seek="${c.t}">Jump to moment</button></div>`;
     } else {
-      html += `<div class="measure-row"><span class="muted">No vehicle seen near a person from this camera. ${said}</span></div>`;
+      html += `<div class="measure-row"><span class="muted">${join("No vehicle near a person on this camera", said)}</span></div>`;
     }
     if (view.events && view.events.includes("CROWDING")) {
-      html += `<div class="measure-row" style="margin-top:6px"><span class="big group">${det.crowd} people bunched</span>
-           <span class="muted">within arm's reach for over a second; this camera usually sees groups of ${view.crowd_typical} · ${det.people} people in view</span>
+      html += `<div class="measure-row" title="People within arm's reach of each other for over a second">
+           <span class="big group">${det.crowd} bunched</span>
+           <span class="muted">${join(`usual ${view.crowd_typical}`, `${det.people} in view`)}</span>
            ${det.crowd_t != null ? `<button data-seek="${det.crowd_t}">Jump to group</button>` : ""}</div>`;
     }
   }
@@ -320,9 +329,15 @@ function fillEvidence(view, clipStart, det) {
   box.querySelectorAll("button[data-seek]").forEach((b) => b.onclick = () => seekPlayer(+b.dataset.seek));
 }
 function captionBox(view) {
-  return `<div class="box"><div class="lbl">AI description · ${esc(view.camera)}</div>
-    <div class="row" style="margin-bottom:8px">${riskBadge(view.risk, view.events)}<div class="chips" style="margin:0">${eventChips(view.events)}</div></div>
-    ${esc(view.narrative || "No caption available.")}</div>`;
+  if (!view.narrative) return "";
+  const words = view.narrative.trim().split(/\s+/).length;
+  return `<details class="box caption" id="caption" ${state.showCaption ? "open" : ""}>
+    <summary><span class="lbl">Full AI description · ${esc(view.camera)}</span><span class="muted">${words} words</span></summary>
+    <div class="captxt">${esc(view.narrative)}</div></details>`;
+}
+function bindCaption() {
+  const d = $("caption");
+  if (d) d.ontoggle = () => { state.showCaption = d.open; };
 }
 
 /* ---------- overlay ---------- */
@@ -529,6 +544,7 @@ function renderIncident() {
   if ($("falseAlarm")) $("falseAlarm").onclick = () => decide("false_alarm");
   if ($("reopen")) $("reopen").onclick = () => decide(null);
   if ($("backToAsk")) $("backToAsk").onclick = () => { state.mode = "ask"; render(); };
+  bindCaption();
   attachOverlay(v.source, (det) => fillEvidence(v, v.start_sec, det), v.gap_status !== "inconclusive");
 }
 
@@ -806,6 +822,7 @@ function renderAsk() {
   $("detail").querySelectorAll(".hit").forEach((b) => b.onclick = () => { state.askSel = +b.dataset.n; renderAsk(); });
   $("backToQueue").onclick = backToQueue;
   if (match) $("openInc").onclick = () => openIncident(match.inc.id, match.cam);
+  bindCaption();
   attachOverlay(c.source, (det) => fillEvidence(view, c.start_sec, det), view.gap_status !== "inconclusive");
 }
 

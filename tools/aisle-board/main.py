@@ -569,7 +569,8 @@ def get_detections_or_none(source):
 def yolo_facts(v):
     facts = []
     if v.get("gap_status") == "measured":
-        facts.append(f"closest person-vehicle gap ~{v['yolo_gap_m']} m")
+        gap = v["yolo_gap_m"]
+        facts.append("person and vehicle touching or overlapping" if gap < 0.2 else f"closest person-vehicle gap ~{gap} m")
     elif v.get("gap_status") == "inconclusive":
         facts.append("measured distance contradicts the caption, so treat distance as unknown")
     if "CROWDING" in v["events"]:
@@ -578,6 +579,11 @@ def yolo_facts(v):
 
 
 _llm_cache = {}
+
+
+def sentence(text):
+    text = (text or "").strip()
+    return text[:1].upper() + text[1:] if text else None
 
 
 def llm_summarize(inc):
@@ -594,9 +600,11 @@ def llm_summarize(inc):
         "Warehouse cameras recorded one incident (one or more back-to-back 5-second moments). "
         "Robots and AGVs count as vehicles. Camera notes:\n"
         f"{evidence}\n\n"
-        "Reply with JSON only: {\"what_happened\": one plain sentence for a shift lead, "
-        "describing who was near, blocking, or crowding whom, or what unsafe behaviour happened, \"action\": one short imperative fix "
-        "(e.g. add floor marking, slow zone, spotter, stagger breaks)}. Only use facts in the notes; "
+        "Reply with JSON only: {\"what_happened\": one plain sentence of at most 15 words for a shift lead, "
+        "hazard first, saying who was near, blocking, or crowding whom, or what unsafe behaviour happened. "
+        "Keep concrete facts from the notes (number of people, vehicle type, distance); drop clothing, colours and "
+        "scene-setting. \"action\": a preventive fix of at most 8 words (e.g. add floor marking, slow zone, spotter, "
+        "stagger breaks)}. Only use facts in the notes; never add a vehicle or person the notes do not mention; "
         "YOLO facts are measurements, prefer them over caption guesses. Never mention YOLO, captions, "
         "detectors or camera names, and only state a distance if the notes agree on it.")
     out = llm_json(prompt, 200)
@@ -827,8 +835,8 @@ class Board:
             out = llm_summarize(inc)
             if out:
                 with self.lock:
-                    inc["summary"] = out.get("what_happened") or inc["summary"]
-                    inc["action"] = out.get("action")
+                    inc["summary"] = sentence(out.get("what_happened")) or inc["summary"]
+                    inc["action"] = sentence(out.get("action"))
                     inc["llm_key"] = self._key(inc)
 
     def _find_causes(self):
