@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 VSS_URL = os.environ["VSS_URL"].rstrip("/")
@@ -36,7 +37,12 @@ EVENT_INFO = {
     "VEHICLE_CONFLICT": ("Vehicles blocking each other", "blocked"),
     "BLOCKED_AISLE": ("Blocked aisle", "blocked"),
     "PALLET_IN_WALKWAY": ("Pallet in walkway", "blocked"),
+    "CROWDING": ("Unusual crowding", "crowding"),
 }
+CROWD_GAP_M = 0.5
+CROWD_MIN = int(os.environ.get("CROWD_MIN", "5"))
+CROWD_ABOVE_TYPICAL = int(os.environ.get("CROWD_ABOVE_TYPICAL", "2"))
+CROWD_PERCENTILE = float(os.environ.get("CROWD_PERCENTILE", "0.95"))
 EVENTS_RE = re.compile(r"EVENTS:\s*(?P<events>[^|\n]*)(?:\|\s*RISK:\s*(?P<risk>\w+))?", re.I)
 RUN_RE = re.compile(r"run_(?P<run>\d+)_seed_\d+\.(?P<cam>[a-z]+_\d+)")
 GAP_RE = re.compile(r"(under 1 ?m|1\s*-\s*3 ?m|over 3 ?m|less than (?:one|1) met)", re.I)
@@ -141,7 +147,33 @@ def describe_chunk(c):
     return fn.split("_chunk")[0], c.get("camera_id") or "camera", fn, 0.0
 
 
-def build_board(chunks):
+def _percentile(values, q):
+    values = sorted(values)
+    return values[min(len(values) - 1, int(q * len(values)))] if values else 0
+
+
+def mark_crowding(incidents):
+    """Flags views whose tightest group is unusual for that camera, not merely large."""
+    by_cam = {}
+    for inc in incidents.values():
+        for v in inc["views"]:
+            if v.get("crowd") is not None:
+                by_cam.setdefault((inc["scene"].split(" · ")[0], v["camera"]), []).append(v)
+    for views in by_cam.values():
+        sizes = [v["crowd"] for v in views]
+        typical = _percentile(sizes, 0.5)
+        threshold = max(CROWD_MIN, _percentile(sizes, CROWD_PERCENTILE), typical + CROWD_ABOVE_TYPICAL)
+        for v in views:
+            v["crowd_typical"] = typical
+            if v["crowd"] >= threshold:
+                near_vehicle = v.get("yolo_gap_m") is not None and v["yolo_gap_m"] < 1
+                crowd_risk = "medium" if near_vehicle or v["crowd"] >= threshold + 2 else "low"
+                v["risk"] = max(v["risk"], crowd_risk, key=RISK_RANK.get) if v["events"] else crowd_risk
+                v["events"] = v["events"] + ["CROWDING"]
+
+
+def build_board(chunks, dets=None):
+    dets = dets or {}
     incidents, views_total, parsed_total, captions = {}, 0, 0, {}
     for c in chunks:
         run, cam, group, offset = describe_chunk(c)
@@ -155,9 +187,10 @@ def build_board(chunks):
                 "narrative": p["narrative"] if p else (seg.get("reasoning_content") or ""),
                 "events": p["events"] if p else [], "risk": p["risk"] if p else "",
             }
-            if not p:
-                continue
-            parsed_total += 1
+            if p:
+                parsed_total += 1
+            else:
+                p = {"events": [], "risk": "", "gap": None, "narrative": seg.get("reasoning_content") or ""}
             key = f"{group}|{seg.get('segment_number')}"
             inc = incidents.setdefault(key, {
                 "id": hashlib.sha1(key.encode()).hexdigest()[:10],
@@ -169,14 +202,27 @@ def build_board(chunks):
                 "camera_id": c.get("camera_id"),
                 "views": [],
             })
-            inc["views"].append({
+            view = {
                 "camera": cam,
                 "source": seg.get("source"),
                 "events": p["events"],
                 "risk": p["risk"],
                 "gap": p["gap"],
                 "narrative": p["narrative"],
-            })
+            }
+            d = dets.get(seg.get("source"))
+            if d:
+                if d["closest"]:
+                    view["yolo_gap_m"], view["yolo_t"] = d["closest"]["gap_m"], d["closest"]["t"]
+                view["crowd"], view["crowd_t"], view["people"] = d["crowd"], d["crowd_t"], d["people"]
+            inc["views"].append(view)
+
+    mark_crowding(incidents)
+    for src_inc in incidents.values():
+        for v in src_inc["views"]:
+            if "CROWDING" in v["events"]:
+                captions[v["source"]]["events"] = v["events"]
+                captions[v["source"]]["risk"] = v["risk"]
 
     flagged = []
     for inc in incidents.values():
@@ -190,6 +236,14 @@ def build_board(chunks):
         inc["flagging_cameras"] = sum(1 for v in inc["views"] if v["events"])
         top = next(v for v in inc["views"] if v["events"])
         inc["summary"] = first_sentences(top["narrative"])
+        if top["events"] == ["CROWDING"]:
+            inc["summary"] = (f"A group of {top['crowd']} people bunched within ~{CROWD_GAP_M} m on {top['camera']} "
+                              f"(this camera usually sees groups of {top['crowd_typical']}). " + inc["summary"])
+        gaps = [(v["yolo_gap_m"], v["camera"], v["yolo_t"]) for v in inc["views"]
+                if v["events"] and v.get("yolo_gap_m") is not None]
+        if gaps:
+            g = min(gaps)
+            inc["yolo_gap"] = {"gap_m": g[0], "camera": g[1], "t": g[2]}
         inc["action"] = None
         flagged.append(inc)
 
@@ -203,6 +257,7 @@ def build_board(chunks):
         "medium": sum(i["risk"] == "medium" for i in flagged),
         "near_miss": sum("near_miss" in i["categories"] for i in flagged),
         "blocked": sum("blocked" in i["categories"] for i in flagged),
+        "crowding": sum("crowding" in i["categories"] for i in flagged),
     }
     return flagged, stats, captions
 
@@ -281,18 +336,56 @@ def analyze_detections(det):
         for p in fr["p"]:
             for e in fr["e"]:
                 g, line = _gap(p, e)
-                if best is None or g < best[0]:
-                    best = (g, line)
+                g_m = g * PERSON_HEIGHT_M / max(p[3] - p[1], 1)
+                if best is None or g_m < best[0]:
+                    best = (g_m, line, g)
         if best:
-            fr["gap_px"] = round(best[0])
+            fr["gap_px"] = round(best[2])
             fr["line"] = best[1]
-            fr["gap_m"] = round(best[0] * PERSON_HEIGHT_M / person_h, 2) if person_h else None
-            if fr["gap_m"] is not None and (closest is None or fr["gap_m"] < closest["gap_m"]):
+            fr["gap_m"] = round(best[0], 2)
+            if closest is None or fr["gap_m"] < closest["gap_m"]:
                 closest = {"gap_m": fr["gap_m"], "t": round(fr["t"], 2), "held": fr["held"]}
+        group = _largest_group(fr["p"])
+        fr["n"] = len(fr["p"])
+        if len(group) >= 3:
+            fr["c"] = group
+
+    hold = max(1, int(fps))
+    sizes = sorted((len(fr.get("c", [])) for fr in frames), reverse=True)
+    counts = sorted((fr["n"] for fr in frames), reverse=True)
+    crowd = sizes[hold - 1] if len(sizes) >= hold else 0
+    peak = max(frames, key=lambda fr: len(fr.get("c", [])), default=None)
     return {"shape": [h, w], "fps": fps, "frames": frames, "closest": closest,
             "equipment_labels": labels, "person_height_px": person_h,
             "equipment_frames": sum(1 for fr in frames if fr["e"] and not fr["held"]),
-            "person_frames": sum(1 for fr in frames if fr["p"])}
+            "person_frames": sum(1 for fr in frames if fr["p"]),
+            "crowd": crowd, "people": counts[hold - 1] if len(counts) >= hold else 0,
+            "crowd_t": round(peak["t"], 2) if peak and crowd else None}
+
+
+def _largest_group(persons):
+    """Indices of the biggest set of people chained within CROWD_GAP_M of each other."""
+    n = len(persons)
+    if n < 2:
+        return list(range(n))
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            a, b = persons[i], persons[j]
+            height = ((a[3] - a[1]) + (b[3] - b[1])) / 2
+            if _gap(a, b)[0] * PERSON_HEIGHT_M / max(height, 1) <= CROWD_GAP_M:
+                parent[find(i)] = find(j)
+    groups = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(i)
+    return max(groups.values(), key=len)
 
 
 _det_cache = {}
@@ -305,6 +398,23 @@ def get_detections(source):
     return _det_cache[source]
 
 
+def get_detections_or_none(source):
+    try:
+        return get_detections(source)
+    except Exception as e:
+        print("detections error:", source[-60:], e, flush=True)
+        return None
+
+
+def yolo_facts(v):
+    facts = []
+    if v.get("yolo_gap_m") is not None:
+        facts.append(f"closest person-vehicle gap ~{v['yolo_gap_m']} m")
+    if "CROWDING" in v["events"]:
+        facts.append(f"group of {v['crowd']} people within {CROWD_GAP_M} m (camera typical {v.get('crowd_typical')})")
+    return f" [YOLO: {'; '.join(facts)}]" if facts else ""
+
+
 _llm_cache = {}
 
 
@@ -312,7 +422,7 @@ def llm_summarize(inc):
     if not (WANDB_API_KEY and WANDB_PROJECT):
         return None
     evidence = "\n".join(
-        f"- {v['camera']} (risk {v['risk'] or 'n/a'}, events {','.join(v['events']) or 'NONE'}): {v['narrative']}"
+        f"- {v['camera']} (risk {v['risk'] or 'n/a'}, events {','.join(v['events']) or 'NONE'}): {v['narrative']}{yolo_facts(v)}"
         for v in inc["views"][:6])
     key = hashlib.sha1(evidence.encode()).hexdigest()
     if key in _llm_cache:
@@ -321,8 +431,9 @@ def llm_summarize(inc):
         "One or more warehouse cameras saw the same 5-second moment. Robots and AGVs count as vehicles. Camera notes:\n"
         f"{evidence}\n\n"
         "Reply with JSON only: {\"what_happened\": one plain sentence for a shift lead, "
-        "describing who was near or blocking whom, \"action\": one short imperative fix "
-        "(e.g. add floor marking, slow zone, spotter)}. Only use facts in the notes.")
+        "describing who was near, blocking, or crowding whom, \"action\": one short imperative fix "
+        "(e.g. add floor marking, slow zone, spotter, stagger breaks)}. Only use facts in the notes; "
+        "YOLO facts are measurements, prefer them over caption guesses.")
     body = json.dumps({"model": LLM_MODEL, "temperature": 0.2, "max_tokens": 200,
                        "messages": [{"role": "user", "content": prompt}]}).encode()
     req = urllib.request.Request(LLM_URL, data=body, headers={
@@ -351,7 +462,11 @@ class Board:
 
     def refresh(self):
         try:
-            incidents, stats, captions = build_board(fetch_chunks())
+            chunks = fetch_chunks()
+            sources = [s.get("source") for c in chunks for s in c.get("timeline") or [] if s.get("source")]
+            with ThreadPoolExecutor(8) as pool:
+                dets = dict(zip(sources, pool.map(get_detections_or_none, sources)))
+            incidents, stats, captions = build_board(chunks, dets)
             with self.lock:
                 old = {i["id"]: i for i in self.incidents}
                 for inc in incidents:
@@ -361,22 +476,6 @@ class Board:
                 self.incidents, self.stats, self.captions = incidents, stats, captions
                 self.updated, self.error = time.time(), None
             print(f"refreshed: {stats}", flush=True)
-            for inc in incidents:
-                for v in inc["views"]:
-                    try:
-                        closest = get_detections(v["source"])["closest"]
-                    except Exception as e:
-                        print("detections error:", v["source"], e, flush=True)
-                        continue
-                    if closest:
-                        with self.lock:
-                            v["yolo_gap_m"], v["yolo_t"] = closest["gap_m"], closest["t"]
-                gaps = [(v["yolo_gap_m"], v["camera"], v["yolo_t"]) for v in inc["views"]
-                        if v["events"] and v.get("yolo_gap_m") is not None]
-                if gaps:
-                    g = min(gaps)
-                    with self.lock:
-                        inc["yolo_gap"] = {"gap_m": g[0], "camera": g[1], "t": g[2]}
             for inc in incidents:
                 if inc.get("llm_key") == self._key(inc):
                     continue
@@ -392,7 +491,7 @@ class Board:
 
     @staticmethod
     def _key(inc):
-        return hashlib.sha1("".join(v["narrative"] for v in inc["views"]).encode()).hexdigest()
+        return hashlib.sha1("".join(f"{v['narrative']}{v['events']}{v.get('crowd')}" for v in inc["views"]).encode()).hexdigest()
 
     def loop(self):
         while True:

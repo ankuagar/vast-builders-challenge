@@ -18,7 +18,7 @@
   header .spacer { flex: 1; }
   button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
   button:hover { border-color: var(--accent); }
-  .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; padding: 16px 22px; }
+  .stats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; padding: 16px 22px; }
   .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
   .stat .v { font-size: 26px; font-weight: 700; }
   .stat .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
@@ -106,10 +106,10 @@ const BASE = location.pathname.endsWith("/") ? location.pathname : location.path
 const EVENT_LABEL = {
   NEAR_MISS: "Near miss", PERSON_IN_PATH: "Person in vehicle path",
   VEHICLE_CONFLICT: "Vehicles blocking each other", BLOCKED_AISLE: "Blocked aisle",
-  PALLET_IN_WALKWAY: "Pallet in walkway",
+  PALLET_IN_WALKWAY: "Pallet in walkway", CROWDING: "Unusual crowding",
 };
 const FILTERS = [
-  ["all", "All"], ["near_miss", "Near misses"], ["blocked", "Blocked aisles"], ["high", "High risk"],
+  ["all", "All"], ["near_miss", "Near misses"], ["blocked", "Blocked aisles"], ["crowding", "Crowding"], ["high", "High risk"],
 ];
 let data = { incidents: [], stats: {} };
 let filter = "all", site = "all", selected = null, selectedCam = 0, showAck = false;
@@ -166,9 +166,18 @@ async function attachOverlay(source, onInfo) {
         ctx.fillStyle = "#faad14"; ctx.fillText(fr.held ? "vehicle (held)" : "vehicle", X(b[0]) + 4, Y(b[1]) - 6);
       }
       ctx.setLineDash([]);
-      for (const b of fr.p) {
-        ctx.strokeStyle = close ? "#ff4d4f" : "#52c41a"; ctx.strokeRect(X(b[0]), Y(b[1]), (b[2] - b[0]) * kx, (b[3] - b[1]) * ky);
-        ctx.fillStyle = ctx.strokeStyle; ctx.fillText("person", X(b[0]) + 4, Y(b[1]) - 6);
+      const group = new Set(fr.c && fr.c.length >= 4 ? fr.c : []);
+      fr.p.forEach((b, n) => {
+        ctx.strokeStyle = close ? "#ff4d4f" : group.has(n) ? "#b37feb" : "#52c41a";
+        ctx.strokeRect(X(b[0]), Y(b[1]), (b[2] - b[0]) * kx, (b[3] - b[1]) * ky);
+        if (!group.size) { ctx.fillStyle = ctx.strokeStyle; ctx.fillText("person", X(b[0]) + 4, Y(b[1]) - 6); }
+      });
+      if (group.size) {
+        const gb = [...group].map((n) => fr.p[n]);
+        const x1 = Math.min(...gb.map((b) => b[0])), y1 = Math.min(...gb.map((b) => b[1]));
+        const label = `group of ${group.size}`;
+        ctx.fillStyle = "rgba(0,0,0,.7)"; ctx.fillRect(X(x1) - 2, Y(y1) - 22, ctx.measureText(label).width + 8, 18);
+        ctx.fillStyle = "#b37feb"; ctx.fillText(label, X(x1) + 2, Y(y1) - 8);
       }
       if (fr.line) {
         const [x1, y1, x2, y2] = fr.line;
@@ -189,6 +198,10 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtSec = (s) => { const t = Math.round(s || 0); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
 const siteOf = (i) => i.scene.split(" · ")[0];
+const crowdChip = (i) => {
+  const v = i.views.find((x) => x.events.includes("CROWDING"));
+  return v ? `<span class="chip yolo">group of ${v.crowd} (usual ${v.crowd_typical})</span>` : "";
+};
 const clipUrl = (src) => `${BASE}clip?source=${encodeURIComponent(src)}`;
 
 function visible() {
@@ -206,7 +219,7 @@ function renderStats() {
   const open = data.incidents.filter((i) => !acked.has(i.id)).length;
   const cards = [
     ["Open incidents", open, ""], ["High risk", s.high ?? 0, "high"], ["Medium risk", s.medium ?? 0, "medium"],
-    ["Near misses", s.near_miss ?? 0, ""], ["Blocked aisles", s.blocked ?? 0, ""],
+    ["Near misses", s.near_miss ?? 0, ""], ["Blocked aisles", s.blocked ?? 0, ""], ["Crowding", s.crowding ?? 0, ""],
     ["Clips analyzed", `${s.segments_analyzed ?? 0}/${s.segments_indexed ?? 0}`, ""],
   ];
   $("stats").innerHTML = cards.map(([k, v, c]) => `<div class="stat ${c}"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
@@ -238,7 +251,7 @@ function renderList() {
         <span class="when">${fmtSec(i.start_sec)}–${fmtSec(i.end_sec)} · ${i.flagging_cameras}/${i.views.length} cams</span>
       </div>
       <div class="sum">${esc(i.summary)}</div>
-      <div class="chips">${i.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("")}${i.yolo_gap ? `<span class="chip yolo">YOLO gap ${fmtGap(i.yolo_gap.gap_m)}</span>` : ""}</div>
+      <div class="chips">${i.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("")}${i.yolo_gap ? `<span class="chip yolo">YOLO gap ${fmtGap(i.yolo_gap.gap_m)}</span>` : ""}${crowdChip(i)}</div>
     </div>`).join("");
   $("list").querySelectorAll(".card").forEach((c) => c.onclick = () => { selected = c.dataset.id; selectedCam = 0; mode = "incident"; render(); });
 }
@@ -328,8 +341,14 @@ function renderDetail() {
       ? `<span class="gapv ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span> <span class="when">YOLO at ${fmtSec(c.t)} into the clip${c.held ? " (vehicle box held from an earlier frame)" : ""}</span>
          <button id="jump" style="margin-left:8px">Jump to moment</button>
          <div class="when" style="margin-top:6px">${said} Estimate = 2D box distance scaled by the person's height (~1.7 m).</div>`
-      : `<span class="when">YOLO saw no vehicle near a person from this angle. ${said}</span>`);
+      : `<span class="when">YOLO saw no vehicle near a person from this angle. ${said}</span>`)
+      + (det && v.events.includes("CROWDING")
+        ? `<div style="margin-top:10px"><span class="gapv mid">group of ${det.crowd}</span>
+             <span class="when">people within ~0.5 m for 1s+, vs. usual ${v.crowd_typical} on this camera · ${det.people} people in frame</span>
+             <button id="jumpCrowd" style="margin-left:8px">Jump to group</button></div>`
+        : "");
     if (c && $("jump")) $("jump").onclick = () => { const p = $("player"); p.pause(); p.currentTime = Math.max(0, c.t); };
+    if ($("jumpCrowd")) $("jumpCrowd").onclick = () => { const p = $("player"); p.pause(); p.currentTime = Math.max(0, det.crowd_t || 0); };
   });
   $("ack").onclick = () => {
     acked.has(i.id) ? acked.delete(i.id) : acked.add(i.id);
