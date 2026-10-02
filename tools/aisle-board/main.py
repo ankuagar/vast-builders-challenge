@@ -1,4 +1,4 @@
-"""Aisle Conflict Board: near misses and blocked aisles from warehouse cameras.
+"""Warehouse Safety Monitor: near misses, blocked aisles and crowding from warehouse cameras.
 
 Reads re-ingested VSS segments whose captions end with
 `EVENTS: <list> | RISK: <level>`, groups the same moment across cameras into one
