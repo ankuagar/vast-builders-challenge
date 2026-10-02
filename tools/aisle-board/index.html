@@ -23,6 +23,8 @@
   .stat .v { font-size: 26px; font-weight: 700; }
   .stat .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
   .stat.high .v { color: var(--high); } .stat.medium .v { color: var(--medium); }
+  .stat.click { cursor: pointer; } .stat.click:hover { border-color: var(--accent); }
+  .stat.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   main { display: grid; grid-template-columns: 420px 1fr; gap: 16px; padding: 0 22px 22px; height: calc(100vh - 250px); min-height: 520px; }
   .ask { display: flex; gap: 8px; align-items: center; padding: 14px 22px 0; flex-wrap: wrap; }
   .ask input { flex: 1; min-width: 280px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; }
@@ -109,8 +111,10 @@ const EVENT_LABEL = {
   PALLET_IN_WALKWAY: "Pallet in walkway", CROWDING: "Unusual crowding",
 };
 const FILTERS = [
-  ["all", "All"], ["near_miss", "Near misses"], ["blocked", "Blocked aisles"], ["crowding", "Crowding"], ["high", "High risk"],
+  ["all", "All"], ["near_miss", "Near misses"], ["blocked", "Blocked aisles"], ["crowding", "Crowding"],
+  ["high", "High risk"], ["medium", "Medium risk"],
 ];
+const RISK_FILTERS = new Set(["high", "medium", "low"]);
 let data = { incidents: [], stats: {} };
 let filter = "all", site = "all", selected = null, selectedCam = 0, showAck = false;
 let mode = "incident", askResult = null, askSel = 0, askBusy = false;
@@ -208,7 +212,7 @@ function visible() {
   return data.incidents.filter((i) => {
     if (!showAck && acked.has(i.id)) return false;
     if (site !== "all" && siteOf(i) !== site) return false;
-    if (filter === "high") return i.risk === "high";
+    if (RISK_FILTERS.has(filter)) return i.risk === filter;
     if (filter === "all") return true;
     return i.categories.includes(filter);
   });
@@ -218,11 +222,15 @@ function renderStats() {
   const s = data.stats || {};
   const open = data.incidents.filter((i) => !acked.has(i.id)).length;
   const cards = [
-    ["Open incidents", open, ""], ["High risk", s.high ?? 0, "high"], ["Medium risk", s.medium ?? 0, "medium"],
-    ["Near misses", s.near_miss ?? 0, ""], ["Blocked aisles", s.blocked ?? 0, ""], ["Crowding", s.crowding ?? 0, ""],
-    ["Clips analyzed", `${s.segments_analyzed ?? 0}/${s.segments_indexed ?? 0}`, ""],
+    ["Open incidents", open, "", "all"], ["High risk", s.high ?? 0, "high", "high"], ["Medium risk", s.medium ?? 0, "medium", "medium"],
+    ["Near misses", s.near_miss ?? 0, "", "near_miss"], ["Blocked aisles", s.blocked ?? 0, "", "blocked"],
+    ["Crowding", s.crowding ?? 0, "", "crowding"],
+    ["Clips analyzed", `${s.segments_analyzed ?? 0}/${s.segments_indexed ?? 0}`, "", null],
   ];
-  $("stats").innerHTML = cards.map(([k, v, c]) => `<div class="stat ${c}"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
+  $("stats").innerHTML = cards.map(([k, v, c, f]) =>
+    `<div class="stat ${c} ${f ? "click" : ""} ${f && f === filter ? "on" : ""}" ${f ? `data-f="${f}" title="Show ${k.toLowerCase()}"` : ""}>
+       <div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
+  $("stats").querySelectorAll(".stat[data-f]").forEach((el) => el.onclick = () => { filter = el.dataset.f; render(); });
 }
 
 function renderFilters() {
