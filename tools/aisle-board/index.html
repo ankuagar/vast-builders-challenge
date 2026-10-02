@@ -14,7 +14,9 @@
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text);
          display: flex; flex-direction: column; height: 100vh; }
   header { display: flex; align-items: center; gap: 16px; padding: 10px 22px; border-bottom: 1px solid var(--line); }
-  header h1 { margin: 0; font-size: 18px; letter-spacing: .3px; }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .3px; white-space: nowrap; }
+  header > * { flex-shrink: 0; white-space: nowrap; }
+  header #sub { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .sub, .when, .muted { color: var(--muted); font-size: 12px; }
   header .sub { font-size: 13px; }
   .spacer { flex: 1; }
@@ -103,14 +105,66 @@
   .hit .txt { color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .empty { color: var(--muted); padding: 40px; text-align: center; }
   kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  [hidden] { display: none !important; }
+
+  .tabs { display: flex; gap: 4px; }
+  .tabs button { background: transparent; border-color: transparent; color: var(--muted); font-weight: 600; }
+  .tabs button.on { color: var(--text); border-color: var(--line); background: var(--panel2); }
+  .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .page { overflow-y: auto; padding: 12px 22px 22px; display: block; }
+  .page h3 { margin: 0 0 10px; font-size: 15px; display: flex; gap: 10px; align-items: baseline; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .kpis .stat { padding: 10px 12px; }
+  .kpis .muted { margin-top: 2px; }
+  .hot { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); gap: 14px; align-items: start; }
+  .hotlist { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; }
+  .hotrow { text-align: left; display: flex; flex-direction: column; gap: 2px; }
+  .hotrow.on { background: var(--panel2); color: var(--text); border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+  .heatwrap { position: relative; }
+  .heatwrap video { max-height: none; height: auto; }
+  .heatwrap canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .legend { display: flex; gap: 14px; align-items: center; font-size: 12px; color: var(--muted); margin: 8px 0; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; vertical-align: -2px; }
+  .incchips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .incchip { font-size: 12px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 6px; }
+  .causes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+  .causes .box { margin: 0; }
+  .review input { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 13px; }
+  .review #note { width: 100%; margin-top: 10px; }
+  .review #reviewer { width: 130px; }
+  .box.reviewed { border-color: rgba(82,196,26,.4); }
+  .box.reviewed.fa { border-color: var(--line); }
+  .note { margin-top: 6px; font-style: italic; }
+  .report { max-width: 920px; margin: 0 auto; }
+  .report .headline { font-size: 18px; line-height: 1.4; margin: 6px 0 14px; }
+  .report table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .report th, .report td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .report th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .report td.n { font-variant-numeric: tabular-nums; }
+  .report ol, .report ul { margin: 4px 0; padding-left: 22px; line-height: 1.6; }
+  .report .item { padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .report .item:last-child { border-bottom: 0; }
+  @media print {
+    .tabs, #refresh, #kbdHint, .ask, #queueView, #insightsView, .noprint, .warn { display: none !important; }
+    body { background: #fff; color: #000; height: auto; display: block; }
+    header { border: 0; }
+    .page { overflow: visible; }
+    .panel, .box { background: #fff; border-color: #bbb; }
+    .muted, .sub, .report th { color: #444; }
+  }
 </style>
 </head>
 <body>
 <header>
   <h1>Warehouse Safety Monitor</h1>
+  <nav class="tabs" id="tabs">
+    <button data-tab="queue" class="on">Incidents</button>
+    <button data-tab="insights">Insights</button>
+    <button data-tab="report">Shift report</button>
+  </nav>
   <span class="sub" id="sub">Loading…</span>
-  <span class="spacer"></span>
-  <span class="muted"><kbd>↑</kbd> <kbd>↓</kbd> move through the queue</span>
+  <span class="muted" id="kbdHint"><kbd>↑</kbd> <kbd>↓</kbd> to move</span>
   <button id="refresh">Refresh</button>
 </header>
 <div class="warn" id="warn" hidden></div>
@@ -121,34 +175,44 @@
   <button type="button" class="ex">robot waiting for a pallet jack</button>
   <button type="button" class="ex">aisle blocked by boxes</button>
 </form>
-<section class="stats" id="stats"></section>
-<main>
-  <section class="queue">
-    <div class="filters" id="filters"></div>
-    <div class="list" id="list"><div class="empty">Loading incidents…</div></div>
-  </section>
-  <section class="detail" id="detail"><div class="empty">Select an incident to review the clip.</div></section>
-</main>
+<div class="view" id="queueView">
+  <section class="stats" id="stats"></section>
+  <main>
+    <section class="queue">
+      <div class="filters" id="filters"></div>
+      <div class="list" id="list"><div class="empty">Loading incidents…</div></div>
+    </section>
+    <section class="detail" id="detail"><div class="empty">Select an incident to review the clip.</div></section>
+  </main>
+</div>
+<div class="view page" id="insightsView" hidden></div>
+<div class="view page" id="reportView" hidden></div>
 <script>
 const BASE = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
 const EVENT_LABEL = {
   NEAR_MISS: "Near miss", PERSON_IN_PATH: "Person in vehicle path",
   VEHICLE_CONFLICT: "Vehicles blocking each other", BLOCKED_AISLE: "Blocked aisle",
   PALLET_IN_WALKWAY: "Pallet in walkway", CROWDING: "Unusual crowding",
+  RIDING_EQUIPMENT: "Riding on equipment", CLIMBING: "Climbing racks or loads", RUNNING: "Running on the floor",
+  PHONE_USE: "Phone use near traffic", NO_PPE: "Missing safety gear", UNSAFE_LOAD: "Unstable or overhead load",
 };
-const TYPES = [["near_miss", "Near misses"], ["blocked", "Blocked aisles"], ["crowding", "Crowding"]];
+const BEHAVIOR_CODES = ["RIDING_EQUIPMENT", "CLIMBING", "RUNNING", "PHONE_USE", "NO_PPE", "UNSAFE_LOAD"];
+// [filter value, card label, short label for the filter row]
+const TYPES = [["near_miss", "Near misses", "Near misses"], ["blocked", "Blocked aisles", "Blocked"],
+               ["crowding", "Crowding", "Crowding"], ["behavior", "Unsafe behavior", "Behavior"]];
 const RISKS = [["high", "High risk"], ["medium", "Medium risk"], ["low", "Low risk"]];
 
 const state = {
-  type: "all", risk: "all", site: "all",
+  tab: "queue", type: "all", risk: "all", site: "all",
   showAck: false, selected: null, cam: 0, moreAngles: false,
   mode: "incident", ask: null, askSel: 0, askBusy: false,
   showBoxes: localStorage.getItem("aisle-boxes") !== "off",
 };
 let data = { incidents: [], stats: {} };
+let reviews = {};
+let insights = null, insightsSel = 0, report = null;
 let overlayRun = 0;
 const detCache = {};
-const acked = new Set(JSON.parse(localStorage.getItem("aisle-acked") || "[]"));
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -158,10 +222,15 @@ const fmtGap = (g) => g == null ? "n/a" : g < 0.2 ? "< 0.2 m" : `${g.toFixed(1)}
 const gapClass = (g) => g == null ? "" : g < 1 ? "close" : g < 3 ? "mid" : "far";
 const siteOf = (scene) => (scene || "").split(" · ")[0];
 const clipUrl = (src) => `${BASE}clip?source=${encodeURIComponent(src)}`;
-const saveAcked = () => localStorage.setItem("aisle-acked", JSON.stringify([...acked]));
+const fmtDur = (s) => s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s || 0)} s`;
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const reviewer = () => localStorage.getItem("aisle-reviewer") || "";
+const reviewLabel = (r) => r.status === "false_alarm" ? "false alarm" : "acknowledged";
+const reviewedCount = () => data.incidents.filter((i) => reviews[i.id]).length;
+const incById = (id) => data.incidents.find((i) => i.id === id);
 
 /* ---------- filtering: one rule set for cards, chips and the list ---------- */
-const inScope = (i) => (state.showAck || !acked.has(i.id)) && (state.site === "all" || siteOf(i.scene) === state.site);
+const inScope = (i) => (state.showAck || !reviews[i.id]) && (state.site === "all" || siteOf(i.scene) === state.site);
 const typeOk = (i, t = state.type) => t === "all" || i.categories.includes(t);
 const riskOk = (i, r = state.risk) => r === "all" || i.risk === r;
 const visible = () => data.incidents.filter((i) => inScope(i) && typeOk(i) && riskOk(i));
@@ -335,11 +404,11 @@ function renderFilters() {
   const shown = visible().length, total = data.incidents.length;
   const filtered = state.type !== "all" || state.risk !== "all" || state.site !== "all";
   $("filters").innerHTML =
-    group("Type", "type", TYPES, "All types") +
-    group("Risk", "risk", RISKS.map(([v, l]) => [v, l.replace(" risk", "")]), "Any") +
-    (sites.length > 1 ? group("Site", "site", sites.map((s) => [s, s]), "All sites") : "") +
+    group("Type", "type", TYPES.map(([v, , short]) => [v, short]), "All") +
+    group("Risk", "risk", RISKS.map(([v, l]) => [v, l.replace(" risk", "")]), "All") +
+    (sites.length > 1 ? group("Site", "site", sites.map((s) => [s, s]), "All") : "") +
     `<div class="fstatus"><span>Showing ${shown} of ${total}</span>
-       <label><input type="checkbox" id="ackToggle" ${state.showAck ? "checked" : ""}> Include acknowledged (${acked.size})</label>
+       <label><input type="checkbox" id="ackToggle" ${state.showAck ? "checked" : ""}> Include reviewed (${reviewedCount()})</label>
        <span class="spacer"></span>${filtered ? `<button id="clearFilters">Clear filters</button>` : ""}</div>`;
   $("filters").querySelectorAll("button[data-dim]").forEach((b) => b.onclick = () => {
     state[b.dataset.dim] = b.dataset.val; render();
@@ -358,11 +427,11 @@ function renderList() {
   $("list").innerHTML = items.map((i) => {
     const top = i.views.find((v) => v.events.length) || i.views[0];
     return `
-    <div class="card ${state.mode === "incident" && state.selected === i.id ? "sel" : ""} ${acked.has(i.id) ? "ack" : ""}" data-id="${i.id}">
+    <div class="card ${state.mode === "incident" && state.selected === i.id ? "sel" : ""} ${reviews[i.id] ? "ack" : ""}" data-id="${i.id}">
       <div class="row">${riskBadge(i.risk, i.events)}<strong>${esc(i.scene)}</strong>
         <span class="when">${fmtRange(i.start_sec, i.end_sec)}</span></div>
       <div class="sum">${esc(i.summary)}</div>
-      <div class="chips">${eventChips(i.events)}${measureChips(top)}${acked.has(i.id) ? `<span class="chip">acknowledged</span>` : ""}</div>
+      <div class="chips">${eventChips(i.events)}${measureChips(top)}${reviews[i.id] ? `<span class="chip">${reviewLabel(reviews[i.id])}</span>` : ""}</div>
     </div>`;
   }).join("");
   $("list").querySelectorAll(".card").forEach((c) => c.onclick = () => openIncident(c.dataset.id));
@@ -403,12 +472,27 @@ function renderIncident() {
     return;
   }
   const v = i.views[state.cam] || i.views[0];
-  const isAck = acked.has(i.id);
+  const rv = reviews[i.id];
   const meta = [
     i.cameras > 1 ? `Flagged on ${i.flagging_cameras} of ${i.cameras} cameras` : esc(i.views[0].camera),
     i.moments > 1 ? `${i.moments} back-to-back moments` : "",
-    isAck ? "acknowledged" : "",
+    rv ? reviewLabel(rv) : "",
   ].filter(Boolean).join(" · ");
+  const backToAsk = state.ask ? `<button id="backToAsk">Back to search results</button>` : "";
+  const reviewHtml = rv
+    ? `<div class="box reviewed ${rv.status === "false_alarm" ? "fa" : ""}">
+         <div class="lbl">${rv.status === "false_alarm" ? "Marked as false alarm" : "Acknowledged"}</div>
+         ${rv.by ? `${esc(rv.by)} · ` : ""}${new Date(rv.at * 1000).toLocaleString()}
+         ${rv.note ? `<div class="note">“${esc(rv.note)}”</div>` : ""}
+         <div class="actions"><button id="reopen">Reopen</button>${backToAsk}</div></div>`
+    : `<div class="review">
+         <input id="note" maxlength="500" placeholder="Note for the team (optional)">
+         <div class="actions">
+           <button id="ack" class="primary">Acknowledge</button>
+           <button id="falseAlarm" title="Nothing unsafe happened; helps tune the detector">False alarm</button>
+           <input id="reviewer" maxlength="60" placeholder="Your name" value="${esc(reviewer())}">
+           ${backToAsk}
+         </div></div>`;
   $("detail").innerHTML = `
     <h2>${riskBadge(i.risk, i.events)} ${esc(i.scene)} · ${fmtRange(i.start_sec, i.end_sec)}</h2>
     <div class="meta">${meta}</div>
@@ -416,10 +500,7 @@ function renderIncident() {
       <div class="decision">
         <div class="box"><div class="lbl">What happened</div>${esc(i.summary)}<div class="chips">${eventChips(i.events)}${measureChips(v)}</div></div>
         ${i.action ? `<div class="box action"><div class="lbl">Suggested action</div>${esc(i.action)}</div>` : ""}
-        <div class="actions">
-          <button id="ack" class="${isAck ? "" : "primary"}">${isAck ? "Reopen incident" : "Acknowledge"}</button>
-          ${state.ask ? `<button id="backToAsk">Back to search results</button>` : ""}
-        </div>
+        ${reviewHtml}
       </div>
       <div class="media">${videoBlock(v.source)}${angleButtons(i)}</div>
     </div>
@@ -427,12 +508,14 @@ function renderIncident() {
     ${captionBox(v)}`;
   $("detail").querySelectorAll("button[data-cam]").forEach((b) => b.onclick = () => { state.cam = +b.dataset.cam; renderIncident(); renderList(); });
   if ($("moreAngles")) $("moreAngles").onclick = () => { state.moreAngles = true; renderIncident(); };
-  $("ack").onclick = () => {
-    if (!isAck && !state.showAck) selectNextAfter(i.id);
-    isAck ? acked.delete(i.id) : acked.add(i.id);
-    saveAcked();
-    render();
+  const decide = (status) => {
+    const note = $("note") ? $("note").value.trim() : "";
+    if (status && !state.showAck) selectNextAfter(i.id);
+    setReview(i.id, status, note);
   };
+  if ($("ack")) $("ack").onclick = () => decide("acknowledged");
+  if ($("falseAlarm")) $("falseAlarm").onclick = () => decide("false_alarm");
+  if ($("reopen")) $("reopen").onclick = () => decide(null);
   if ($("backToAsk")) $("backToAsk").onclick = () => { state.mode = "ask"; render(); };
   attachOverlay(v.source, (det) => fillEvidence(v, v.start_sec, det), v.gap_status !== "inconclusive");
 }
@@ -443,6 +526,216 @@ function selectNextAfter(id) {
   const next = items[idx + 1] || items[idx - 1];
   state.selected = next && next.id !== id ? next.id : null;
   state.cam = 0; state.moreAngles = false;
+}
+
+async function setReview(id, status, note) {
+  const by = ($("reviewer") && $("reviewer").value.trim()) || reviewer();
+  if (by) localStorage.setItem("aisle-reviewer", by);
+  const before = reviews[id];
+  if (status) reviews[id] = { status, note, by, at: Date.now() / 1000 }; else delete reviews[id];
+  render();
+  try {
+    const r = await fetch(`${BASE}api/review`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status, note, by }) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    reviews = (await r.json()).reviews;
+  } catch (e) {
+    if (before) reviews[id] = before; else delete reviews[id];
+    showWarn(`Could not save the review (${e.message}). Please try again.`);
+  }
+  render();
+}
+
+function showWarn(text) {
+  $("warn").hidden = !text;
+  $("warn").textContent = text || "";
+}
+
+/* ---------- tabs ---------- */
+function setTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  $("queueView").hidden = tab !== "queue";
+  $("insightsView").hidden = tab !== "insights";
+  $("reportView").hidden = tab !== "report";
+  $("kbdHint").hidden = tab !== "queue";
+  history.replaceState(null, "", tab === "queue" ? location.pathname : `#${tab}`);
+  if (tab !== "queue" && $("player")) $("player").pause();
+  if (tab === "queue") { lastDetailKey = null; render(); }
+  if (tab === "insights") { renderInsights(); loadInsights(); }
+  if (tab === "report") { renderReport(); loadInsights(); loadReport(); }
+}
+
+function goToIncident(id) {
+  if (!incById(id)) return;
+  if (!visible().some((i) => i.id === id)) {
+    state.type = state.risk = state.site = "all";
+    if (reviews[id]) state.showAck = true;
+  }
+  state.mode = "incident"; state.selected = id; state.cam = 0; state.moreAngles = false;
+  setTab("queue");
+}
+function incChip(id) {
+  const i = incById(id);
+  return i ? `<button class="incchip" data-open="${id}"><span class="dot ${i.risk}"></span>${esc(i.scene)} · ${fmtRange(i.start_sec, i.end_sec)}${reviews[id] ? ` · ${reviewLabel(reviews[id])}` : ""}</button>` : "";
+}
+function bindOpen(root) {
+  root.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => goToIncident(b.dataset.open));
+}
+
+/* ---------- insights ---------- */
+async function loadInsights() {
+  try {
+    const r = await fetch(`${BASE}api/insights`, { cache: "no-store" });
+    insights = await r.json();
+  } catch (e) {
+    insights = insights || { error: String(e), hotspots: [], sites: [], causes: [] };
+  }
+  if (state.tab === "insights") renderInsights();
+  if (state.tab === "report") renderReport();
+}
+
+function renderInsights() {
+  const root = $("insightsView");
+  if (!insights) { root.innerHTML = `<div class="empty">Loading insights…</div>`; return; }
+  const inc = data.incidents;
+  const reviewed = inc.filter((i) => reviews[i.id]);
+  const falseAlarms = reviewed.filter((i) => reviews[i.id].status === "false_alarm").length;
+  const hot = insights.hotspots || [];
+  insightsSel = Math.min(insightsSel, Math.max(0, hot.length - 1));
+  const spot = hot[insightsSel];
+  const behaviors = {};
+  inc.forEach((i) => i.events.filter((e) => BEHAVIOR_CODES.includes(e))
+    .forEach((e) => (behaviors[e] = behaviors[e] || []).push(i.id)));
+
+  root.innerHTML = `
+    <section class="kpis">
+      ${(insights.sites || []).map((s) => `<div class="stat info" title="Time in analysed footage when a person was within about 1 m of a vehicle">
+        <div class="v">${fmtDur(s.close_sec)}</div><div class="k">${esc(s.site)} · people within 1 m of a vehicle</div>
+        <div class="muted">${s.close_per_hour} s per hour of footage · ${fmtDur(s.footage_sec)} analysed</div></div>`).join("")}
+      <div class="stat info"><div class="v">${reviewed.length} / ${inc.length}</div><div class="k">Incidents reviewed</div>
+        <div class="muted">${plural(falseAlarms, "false alarm")}</div></div>
+      <div class="stat info"><div class="v">${new Set(Object.values(behaviors).flat()).size}</div>
+        <div class="k">Incidents with unsafe behavior</div><div class="muted">from the AI descriptions</div></div>
+    </section>
+
+    <section class="panel"><h3>Hotspots <span class="muted">where people got close to vehicles or bunched up</span></h3>
+      ${hot.length ? `<div class="hot">
+        <div class="hotlist">${hot.map((s, n) => `<button class="hotrow ${n === insightsSel ? "on" : ""}" data-spot="${n}">
+          <strong>${esc(s.spot)}</strong>
+          <span class="muted">${plural(s.incidents.length, "incident")} · ${fmtDur(s.close_sec)} close to vehicles${s.crowd_sec ? ` · ${fmtDur(s.crowd_sec)} crowded` : ""}</span></button>`).join("")}</div>
+        <div>
+          <div class="heatwrap"><video id="heatVideo" muted playsinline preload="auto" src="${clipUrl(spot.still)}"></video><canvas id="heatCanvas"></canvas></div>
+          <div class="legend"><span><span class="swatch" style="background:var(--high)"></span>person close to a vehicle</span>
+            <span><span class="swatch" style="background:var(--group)"></span>people bunched together</span>
+            <span>${plural(spot.points.length, "sample")} over ${fmtDur(spot.footage_sec)} of footage</span></div>
+          <div class="incchips">${spot.incidents.map(incChip).join("") || `<span class="muted">No incidents flagged here; the heat comes from moments below the alert threshold.</span>`}</div>
+        </div></div>` : `<div class="muted">No close calls or crowding measured yet.</div>`}
+    </section>
+
+    <section class="panel"><h3>Recurring causes <span class="muted">incidents grouped by what keeps going wrong</span></h3>
+      ${(insights.causes || []).length ? `<div class="causes">${insights.causes.map((c) => `<div class="box">
+          <div class="lbl">${plural(c.ids.length, "incident")}</div><strong>${esc(c.cause)}</strong>
+          <div class="muted" style="margin:4px 0 8px">${esc(c.why)}</div>
+          ${c.fix ? `<div style="margin-bottom:8px"><span class="muted">Fix:</span> ${esc(c.fix)}</div>` : ""}
+          <div class="incchips">${c.ids.map(incChip).join("")}</div></div>`).join("")}</div>`
+        : `<div class="muted">${inc.length < 2 ? "Needs at least two incidents." : "Grouping incidents… check back in a minute."}</div>`}
+    </section>
+
+    <section class="panel"><h3>Unsafe behavior <span class="muted">riding equipment, climbing, running, phones, missing gear, unstable loads</span></h3>
+      ${Object.keys(behaviors).length ? Object.entries(behaviors).map(([code, ids]) => `<div style="margin-bottom:10px">
+          <strong>${EVENT_LABEL[code]}</strong> <span class="muted">· ${plural(ids.length, "incident")}</span>
+          <div class="incchips" style="margin-top:6px">${ids.map(incChip).join("")}</div></div>`).join("")
+        : `<div class="muted">None described in the footage so far.</div>`}
+    </section>`;
+
+  root.querySelectorAll("[data-spot]").forEach((b) => b.onclick = () => { insightsSel = +b.dataset.spot; renderInsights(); });
+  bindOpen(root);
+  if (spot) drawHeat(spot);
+}
+
+function drawHeat(spot) {
+  const video = $("heatVideo"), canvas = $("heatCanvas");
+  const paint = () => {
+    canvas.width = video.clientWidth; canvas.height = video.clientHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = "lighter";
+    const r = Math.max(16, canvas.width / 28);
+    for (const [x, y, kind] of spot.points) {
+      const cx = x * canvas.width, cy = y * canvas.height;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      const rgb = kind ? "179,127,235" : "255,77,79";
+      g.addColorStop(0, `rgba(${rgb},.28)`); g.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = g; ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r);
+    }
+    ctx.globalCompositeOperation = "source-over";
+  };
+  video.onloadeddata = () => { video.currentTime = spot.still_t || 0; };
+  video.onseeked = paint;
+}
+
+/* ---------- shift report ---------- */
+async function loadReport() {
+  report = null;
+  renderReport();
+  try {
+    const r = await fetch(`${BASE}api/report`, { cache: "no-store" });
+    report = await r.json();
+  } catch (e) {
+    report = { error: String(e), highlights: [], actions: [] };
+  }
+  if (state.tab === "report") renderReport();
+}
+
+function renderReport() {
+  const inc = data.incidents;
+  const s = data.stats || {};
+  const sites = [...new Set(inc.map((i) => siteOf(i.scene)))];
+  const status = (i) => reviews[i.id] ? reviews[i.id].status : "open";
+  const count = (pred) => inc.filter(pred).length;
+  const rows = TYPES.map(([t, label]) => {
+    const n = (r) => count((i) => i.categories.includes(t) && (!r || i.risk === r));
+    return `<tr><td>${label}</td><td class="n">${n("high")}</td><td class="n">${n("medium")}</td><td class="n">${n("low")}</td><td class="n"><strong>${n()}</strong></td></tr>`;
+  }).join("");
+  const writing = `<span class="muted">Writing summary…</span>`;
+  const r = report;
+  const hot = ((insights && insights.hotspots) || []).slice(0, 3);
+  const causes = (insights && insights.causes) || [];
+  $("reportView").innerHTML = `<div class="report">
+    <div class="row noprint" style="margin-bottom:12px"><span class="spacer"></span>
+      <button id="printReport" class="primary">Print or save as PDF</button></div>
+    <section class="panel">
+      <div class="muted">Shift report · ${esc(sites.join(", ") || "Warehouse cameras")} · ${new Date().toLocaleString()}</div>
+      <div class="headline">${r ? (esc(r.headline) || `<span class="muted">Summary unavailable right now; the numbers below are complete.</span>`) : writing}</div>
+      <table><thead><tr><th>Incident type</th><th>High</th><th>Medium</th><th>Low</th><th>Total</th></tr></thead><tbody>${rows}
+        <tr><td><strong>All incidents</strong></td><td class="n">${count((i) => i.risk === "high")}</td><td class="n">${count((i) => i.risk === "medium")}</td>
+        <td class="n">${count((i) => i.risk === "low")}</td><td class="n"><strong>${inc.length}</strong></td></tr></tbody></table>
+      <div class="muted" style="margin-top:8px">Review status: ${count((i) => status(i) === "open")} open · ${count((i) => status(i) === "acknowledged")} acknowledged ·
+        ${plural(count((i) => status(i) === "false_alarm"), "false alarm")}</div>
+    </section>
+    <section class="panel"><h3>Highlights</h3>${r ? (r.highlights.length ? `<ul>${r.highlights.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : `<span class="muted">Unavailable.</span>`) : writing}</section>
+    <section class="panel"><h3>Recommended actions</h3>${r ? (r.actions.length ? `<ol>${r.actions.map((a) => `<li>${esc(a)}</li>`).join("")}</ol>` : `<span class="muted">Unavailable.</span>`) : writing}</section>
+    <section class="panel"><h3>Top incidents</h3>
+      ${inc.slice(0, 5).map((i) => `<div class="item" data-open="${i.id}">
+        <div class="row">${riskBadge(i.risk, i.events)}<strong>${esc(i.scene)} · ${fmtRange(i.start_sec, i.end_sec)}</strong>
+          <span class="when">${status(i) === "open" ? "open" : reviewLabel(reviews[i.id])}</span></div>
+        <div style="margin-top:4px">${esc(i.summary)}</div>
+        ${i.action ? `<div class="muted" style="margin-top:2px">Action: ${esc(i.action)}</div>` : ""}</div>`).join("") || `<span class="muted">No incidents.</span>`}
+    </section>
+    <section class="panel"><h3>Hotspots</h3>
+      ${hot.length ? `<table><thead><tr><th>Where</th><th>Incidents</th><th>Close to vehicles</th><th>Crowded</th></tr></thead><tbody>
+        ${hot.map((h) => `<tr><td>${esc(h.spot)}</td><td class="n">${h.incidents.length}</td><td class="n">${fmtDur(h.close_sec)}</td><td class="n">${fmtDur(h.crowd_sec)}</td></tr>`).join("")}
+        </tbody></table>` : `<span class="muted">Loading…</span>`}
+    </section>
+    ${causes.length ? `<section class="panel"><h3>Recurring causes</h3><ul>${causes.map((c) =>
+      `<li><strong>${esc(c.cause)}</strong> (${plural(c.ids.length, "incident")})${c.fix ? `: ${esc(c.fix)}` : ""}</li>`).join("")}</ul></section>` : ""}
+    <div class="muted">Based on ${s.segments_analyzed ?? 0} of ${s.segments_indexed ?? 0} video clips analysed by AI.
+      Distances are estimates from the video; open an incident to check the clip.</div>
+  </div>`;
+  $("printReport").onclick = () => window.print();
+  $("reportView").querySelectorAll("[data-open]").forEach((el) => el.onclick = () => goToIncident(el.dataset.open));
 }
 
 /* ---------- search footage ---------- */
@@ -512,7 +805,7 @@ async function ask(question) {
   $("askInput").value = question;
   state.mode = "ask"; state.askBusy = true; state.askSel = 0;
   $("askBtn").disabled = true;
-  render();
+  state.tab === "queue" ? render() : setTab("queue");
   try {
     const r = await fetch(`${BASE}api/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
     const body = await r.json();
@@ -539,7 +832,7 @@ let lastDetailKey = null;
 function renderDetail(force = false) {
   const key = state.mode === "ask"
     ? `ask|${state.askBusy}|${state.ask && state.ask.question}|${state.askSel}`
-    : `inc|${state.selected}|${state.cam}|${state.moreAngles}|${acked.has(state.selected)}|${!!state.ask}`;
+    : `inc|${state.selected}|${state.cam}|${state.moreAngles}|${JSON.stringify(reviews[state.selected] || null)}|${!!state.ask}`;
   if (!force && key === lastDetailKey && $("player")) return;
   lastDetailKey = key;
   state.mode === "ask" ? renderAsk() : renderIncident();
@@ -547,19 +840,20 @@ function renderDetail(force = false) {
 
 function render() {
   ensureSelection();
-  renderStats(); renderFilters(); renderList(); renderDetail();
+  renderStats(); renderFilters(); renderList();
+  if (state.tab === "queue") renderDetail();
 }
 
 async function load() {
   try {
     const r = await fetch(`${BASE}api/board`, { cache: "no-store" });
     data = await r.json();
+    reviews = data.reviews || {};
     const when = data.updated ? new Date(data.updated * 1000).toLocaleTimeString() : "not yet";
     const sites = [...new Set(data.incidents.map((i) => siteOf(i.scene)))];
     const s = data.stats || {};
     $("sub").textContent = `${sites.length ? sites.join(", ") : "Warehouse cameras"} · ${s.segments_analyzed ?? 0} of ${s.segments_indexed ?? 0} clips reviewed · updated ${when}`;
-    $("warn").hidden = !data.error;
-    $("warn").textContent = data.error ? `Last refresh failed: ${data.error}` : "";
+    showWarn(data.error ? `Last refresh failed: ${data.error}` : "");
     render();
   } catch (e) {
     $("sub").textContent = "Could not reach the board API";
@@ -567,7 +861,7 @@ async function load() {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.target.matches?.("input, textarea") || !["ArrowDown", "ArrowUp"].includes(e.key)) return;
+  if (state.tab !== "queue" || e.target.matches?.("input, textarea") || !["ArrowDown", "ArrowUp"].includes(e.key)) return;
   const items = visible();
   if (!items.length) return;
   const idx = state.mode === "incident" ? items.findIndex((i) => i.id === state.selected) : -1;
@@ -580,9 +874,15 @@ $("refresh").onclick = async () => {
   const btn = $("refresh");
   btn.disabled = true; btn.textContent = "Refreshing…";
   try { await fetch(`${BASE}api/refresh`, { method: "POST" }); } catch (e) { /* load() reports reachability */ }
-  setTimeout(async () => { await load(); btn.disabled = false; btn.textContent = "Refresh"; }, 5000);
+  setTimeout(async () => {
+    await load();
+    if (state.tab === "insights") loadInsights();
+    if (state.tab === "report") loadReport();
+    btn.disabled = false; btn.textContent = "Refresh";
+  }, 5000);
 };
-load();
+document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => setTab(b.dataset.tab));
+load().then(() => { const tab = location.hash.slice(1); if (tab === "insights" || tab === "report") setTab(tab); });
 setInterval(load, 30000);
 </script>
 </body>

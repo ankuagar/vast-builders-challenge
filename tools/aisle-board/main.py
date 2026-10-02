@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import ssl
 import threading
 import time
 import urllib.error
@@ -38,7 +39,24 @@ EVENT_INFO = {
     "BLOCKED_AISLE": ("Blocked aisle", "blocked"),
     "PALLET_IN_WALKWAY": ("Pallet in walkway", "blocked"),
     "CROWDING": ("Unusual crowding", "crowding"),
+    "RIDING_EQUIPMENT": ("Riding on equipment", "behavior"),
+    "CLIMBING": ("Climbing racks or loads", "behavior"),
+    "RUNNING": ("Running on the floor", "behavior"),
+    "PHONE_USE": ("Phone use near traffic", "behavior"),
+    "NO_PPE": ("Missing safety gear", "behavior"),
+    "UNSAFE_LOAD": ("Unstable or overhead load", "behavior"),
 }
+BEHAVIOR_HINTS = {
+    "RIDING_EQUIPMENT": "a person riding on forks, a pallet, a load or the outside of a vehicle (a seated operator driving is fine)",
+    "CLIMBING": "a person climbing racks, shelving or stacked loads",
+    "RUNNING": "a person running or rushing across the floor",
+    "PHONE_USE": "a person looking at or talking on a phone while walking or near moving vehicles",
+    "NO_PPE": "a worker explicitly described without a hi-vis vest or hard hat while others wear one",
+    "UNSAFE_LOAD": "a load that is tilting, falling, stacked dangerously high, or carried over people",
+}
+DATA_DIR = os.environ.get("DATA_DIR", "/tmp/aisle-board-data")
+REVIEW_STATUSES = {"acknowledged", "false_alarm"}
+ID_RE = re.compile(r"^[0-9a-f]{10}$")
 CROWD_GAP_M = 0.5
 CROWD_MIN = int(os.environ.get("CROWD_MIN", "5"))
 CROWD_ABOVE_TYPICAL = int(os.environ.get("CROWD_ABOVE_TYPICAL", "2"))
@@ -193,15 +211,16 @@ def _percentile(values, q):
 
 def mark_crowding(incidents):
     """Flags views whose tightest group is unusual for that camera, not merely large."""
-    by_cam = {}
+    by_cam, thresholds = {}, {}
     for inc in incidents.values():
         for v in inc["views"]:
             if v.get("crowd") is not None:
                 by_cam.setdefault((inc["scene"].split(" · ")[0], v["camera"]), []).append(v)
-    for views in by_cam.values():
+    for cam_key, views in by_cam.items():
         sizes = [v["crowd"] for v in views]
         typical = _percentile(sizes, 0.5)
         threshold = max(CROWD_MIN, _percentile(sizes, CROWD_PERCENTILE), typical + CROWD_ABOVE_TYPICAL)
+        thresholds[cam_key] = threshold
         for v in views:
             v["crowd_typical"] = typical
             if v["crowd"] >= threshold:
@@ -209,6 +228,7 @@ def mark_crowding(incidents):
                 crowd_risk = "medium" if near_vehicle or v["crowd"] >= threshold + 2 else "low"
                 v["risk"] = max(v["risk"], crowd_risk, key=RISK_RANK.get) if v["events"] else crowd_risk
                 v["events"] = v["events"] + ["CROWDING"]
+    return thresholds
 
 
 def build_board(chunks, dets=None):
@@ -260,9 +280,14 @@ def build_board(chunks, dets=None):
                     view["yolo_gap_m"], view["yolo_t"] = d["closest"]["gap_m"], d["closest"]["t"]
                 view["crowd"], view["crowd_t"], view["people"] = d["crowd"], d["crowd_t"], d["people"]
             view["gap_status"] = gap_status(view)
+            for code, risk in _behavior_cache.get(_caption_key(p["narrative"])) or []:
+                if code not in view["events"]:
+                    view["events"] = view["events"] + [code]
+                    view["risk"] = max(view["risk"], risk, key=RISK_RANK.get)
+            captions[seg.get("source")].update(events=view["events"], risk=view["risk"], gap_status=view["gap_status"])
             inc["views"].append(view)
 
-    mark_crowding(incidents)
+    thresholds = mark_crowding(incidents)
     for src_inc in incidents.values():
         for v in src_inc["views"]:
             if "CROWDING" in v["events"]:
@@ -300,8 +325,82 @@ def build_board(chunks, dets=None):
         "near_miss": sum("near_miss" in i["categories"] for i in flagged),
         "blocked": sum("blocked" in i["categories"] for i in flagged),
         "crowding": sum("crowding" in i["categories"] for i in flagged),
+        "behavior": sum("behavior" in i["categories"] for i in flagged),
     }
-    return flagged, stats, captions
+    return flagged, stats, captions, thresholds
+
+
+HOTSPOT_POINTS = 300
+
+
+def build_insights(chunks, dets, flagged, captions, thresholds):
+    """Per-camera close-call and crowding time plus heatmap points, from every analysed frame."""
+    spots, seen = {}, set()
+
+    def spot(site, cam):
+        return spots.setdefault((site, cam), {
+            "site": site.split(" · ")[0], "spot": site if site.endswith(cam) else f"{site} · {cam}", "camera": cam,
+            "footage_sec": 0.0, "close_sec": 0.0, "crowd_sec": 0.0, "points": [], "incidents": [], "_best": (0, None, 0.0)})
+
+    for c in chunks:
+        scene, cam, _, _ = describe_chunk(c)
+        crowd_min = thresholds.get((scene.split(" · ")[0], cam), CROWD_MIN)
+        for seg in c.get("timeline") or []:
+            src, d = seg.get("source"), dets.get(seg.get("source"))
+            if src in seen or not d or not d["frames"]:
+                continue
+            seen.add(src)
+            s = spot(scene, cam)
+            h, w = d["shape"]
+            dt = 1 / (d["fps"] or 30)
+            trust_gap = (captions.get(src) or {}).get("gap_status") != "inconclusive"
+            s["footage_sec"] += len(d["frames"]) * dt
+            pts, first_t = 0, None
+            for n, fr in enumerate(d["frames"]):
+                close = trust_gap and fr.get("gap_m") is not None and fr["gap_m"] < 1
+                crowd = len(fr.get("c") or []) >= crowd_min
+                s["close_sec"] += dt if close else 0
+                s["crowd_sec"] += dt if crowd else 0
+                if (close or crowd) and first_t is None:
+                    first_t = fr["t"]
+                if n % 3:
+                    continue
+                if close:
+                    x1, y1, x2, y2 = fr["line"]
+                    s["points"].append([round((x1 + x2) / 2 / w, 3), round((y1 + y2) / 2 / h, 3), 0])
+                    pts += 1
+                if crowd:
+                    group = [fr["p"][i] for i in fr["c"]]
+                    cx = sum((b[0] + b[2]) / 2 for b in group) / len(group)
+                    cy = sum(b[3] for b in group) / len(group)
+                    s["points"].append([round(cx / w, 3), round(cy / h, 3), 1])
+                    pts += 1
+            if pts > s["_best"][0] or s["_best"][1] is None:
+                s["_best"] = (pts, src, first_t or 0.0)
+
+    for inc in flagged:
+        for key in {(inc["scene"], v["camera"]) for v in inc["views"] if v["events"]}:
+            spot(*key)["incidents"].append(inc["id"])
+
+    out, sites = [], {}
+    for s in spots.values():
+        site = sites.setdefault(s["site"], {"site": s["site"], "footage_sec": 0.0, "close_sec": 0.0, "crowd_sec": 0.0})
+        for k in ("footage_sec", "close_sec", "crowd_sec"):
+            site[k] += s[k]
+        if not (s["incidents"] or s["close_sec"] or s["crowd_sec"]):
+            continue
+        step = max(1, -(-len(s["points"]) // HOTSPOT_POINTS))
+        _, still, still_t = s.pop("_best")
+        out.append({**s, "points": s["points"][::step], "still": still, "still_t": still_t,
+                    "close_sec": round(s["close_sec"], 1), "crowd_sec": round(s["crowd_sec"], 1),
+                    "footage_sec": round(s["footage_sec"], 1)})
+    out.sort(key=lambda s: (-len(s["incidents"]), -(s["close_sec"] + s["crowd_sec"])))
+    for site in sites.values():
+        hours = site["footage_sec"] / 3600 or 1
+        site.update({k: round(site[k], 1) for k in ("footage_sec", "close_sec", "crowd_sec")})
+        site["close_per_hour"] = round(site["close_sec"] / hours)
+        site["crowd_per_hour"] = round(site["crowd_sec"] / hours)
+    return {"hotspots": out, "sites": sorted(sites.values(), key=lambda s: s["site"])}
 
 
 # COCO has no forklift class; on these cameras YOLO lands on forklifts under these labels.
@@ -430,20 +529,39 @@ def _largest_group(persons):
     return max(groups.values(), key=len)
 
 
-_det_cache = {}
+_det_cache, _det_missing = {}, set()
+DET_DIR = os.path.join(DATA_DIR, "detections")
+# The shared backend loads each detections file into memory; bursts of parallel requests get it OOM-killed.
+DET_WORKERS = int(os.environ.get("DET_WORKERS", "2"))
+os.makedirs(DET_DIR, exist_ok=True)
 
 
 def get_detections(source):
-    if source not in _det_cache:
-        det = vss.get("/api/v1/videos/detections?" + urllib.parse.urlencode({"source": source}))
-        _det_cache[source] = analyze_detections(det)
+    if source in _det_cache:
+        return _det_cache[source]
+    path = os.path.join(DET_DIR, hashlib.sha1(source.encode()).hexdigest() + ".json")
+    try:
+        with open(path) as f:
+            _det_cache[source] = json.load(f)
+            return _det_cache[source]
+    except (OSError, ValueError):
+        pass
+    det = vss.get("/api/v1/videos/detections?" + urllib.parse.urlencode({"source": source}))
+    _det_cache[source] = analyze_detections(det)
+    with open(path + ".tmp", "w") as f:
+        json.dump(_det_cache[source], f)
+    os.replace(path + ".tmp", path)
     return _det_cache[source]
 
 
 def get_detections_or_none(source):
+    if source in _det_missing:
+        return None
     try:
         return get_detections(source)
     except Exception as e:
+        if isinstance(e, urllib.error.HTTPError) and e.code == 404:
+            _det_missing.add(source)
         print("detections error:", source[-60:], e, flush=True)
         return None
 
@@ -477,26 +595,181 @@ def llm_summarize(inc):
         "Robots and AGVs count as vehicles. Camera notes:\n"
         f"{evidence}\n\n"
         "Reply with JSON only: {\"what_happened\": one plain sentence for a shift lead, "
-        "describing who was near, blocking, or crowding whom, \"action\": one short imperative fix "
+        "describing who was near, blocking, or crowding whom, or what unsafe behaviour happened, \"action\": one short imperative fix "
         "(e.g. add floor marking, slow zone, spotter, stagger breaks)}. Only use facts in the notes; "
         "YOLO facts are measurements, prefer them over caption guesses. Never mention YOLO, captions, "
         "detectors or camera names, and only state a distance if the notes agree on it.")
-    body = json.dumps({"model": LLM_MODEL, "temperature": 0.2, "max_tokens": 200,
+    out = llm_json(prompt, 200)
+    if out:
+        _llm_cache[key] = out
+    return out
+
+
+def llm_json(prompt, max_tokens):
+    """One chat completion that must answer with a JSON object; None on any failure."""
+    if not (WANDB_API_KEY and WANDB_PROJECT):
+        return None
+    body = json.dumps({"model": LLM_MODEL, "temperature": 0.2, "max_tokens": max_tokens,
                        "messages": [{"role": "user", "content": prompt}]}).encode()
     req = urllib.request.Request(LLM_URL, data=body, headers={
         "Authorization": "Bearer " + WANDB_API_KEY,
         "OpenAI-Project": WANDB_PROJECT,
         "Content-Type": "application/json",
         "User-Agent": "aisle-board/1.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            text = json.load(r)["choices"][0]["message"]["content"]
-        out = json.loads(text[text.index("{"):text.rindex("}") + 1])
-        _llm_cache[key] = out
-        return out
-    except Exception as e:
-        print("llm error:", e, flush=True)
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=90) as r:
+                text = json.load(r)["choices"][0]["message"]["content"] or ""
+            return json.loads(text[text.index("{"):text.rindex("}") + 1])
+        except Exception as e:
+            print(f"llm error (attempt {attempt + 1}):", e, flush=True)
+    return None
+
+
+_behavior_cache = {}
+
+
+def _caption_key(text):
+    return hashlib.sha1(text.encode()).hexdigest()
+
+
+def cached_behaviors(captions):
+    """source -> [[event, risk], ...] for captions already classified."""
+    out = {}
+    for src, cap in captions.items():
+        hit = _behavior_cache.get(_caption_key(cap["narrative"]))
+        if hit:
+            out[src] = hit
+    return out
+
+
+BEHAVIOR_CUES = {k: re.compile(v, re.I) for k, v in {
+    "RIDING_EQUIPMENT": r"\b(rid(e|es|ing)|stand(s|ing)?|perched|sit(s|ting)?)\s+(on|atop)\s+(the\s+|a\s+)?"
+                        r"(forks?|pallet|load|boxes|outside|back of|side of|rear of)",
+    "CLIMBING": r"\bclimb(s|ed|ing)?\b[^.]{0,40}\b(rack|shel|stack|pallet|boxes|load)",
+    "RUNNING": r"\b(run|runs|running|ran|rush(es|ing)?|sprint\w*|jog\w*|hurr(y|ies|ied))\b",
+    "PHONE_USE": r"\b(phone|cellphone|smartphone|mobile device|texting)\b",
+    "NO_PPE": r"\b(without|no|not wearing|missing|lacks?)\s+(a\s+|any\s+)?(hi-?vis|high[- ]visibility|safety vest|"
+              r"vest|hard ?hat|helmet|ppe|safety gear)",
+    "UNSAFE_LOAD": r"\b(tilt\w*|toppl\w*|teeter\w*|unstable|precarious\w*|falling|fell|falls|sway\w*|overhang\w*)\b",
+}.items()}
+
+
+def _classify_one(text):
+    candidates = [code for code, cue in BEHAVIOR_CUES.items() if cue.search(text)]
+    if not candidates:
+        return []
+    rules = "\n".join(f"- {c}: {BEHAVIOR_HINTS[c]}" for c in candidates)
+    out = llm_json(
+        "A warehouse camera description follows. Decide which of these unsafe behaviours it explicitly describes "
+        f"happening (not negated, not hypothetical):\n{rules}\n\nDescription: {text[:1500]}\n\n"
+        "Reply with JSON only: {\"flags\": [{\"code\": code, \"risk\": low|medium|high, "
+        "\"quote\": exact words copied from the description}]}; use an empty list if none apply.", 300)
+    if out is None:
         return None
+    found, lower = [], text.lower()
+    for item in out.get("flags") or []:
+        if not isinstance(item, dict):
+            continue
+        code, quote = str(item.get("code", "")).upper(), str(item.get("quote", "")).strip().lower()
+        risk = str(item.get("risk", "low")).lower()
+        if code in candidates and quote and quote in lower and BEHAVIOR_CUES[code].search(quote):
+            found.append([code, risk if risk in ("low", "medium", "high") else "low"])
+    return found
+
+
+def classify_behaviors(texts):
+    """Keyword gate, then an LLM check that must quote the description; returns how many were newly classified."""
+    todo = sorted({t for t in texts if t and _caption_key(t) not in _behavior_cache})
+
+    def run(text):
+        found = _classify_one(text)
+        if found is None:
+            return 0
+        _behavior_cache[_caption_key(text)] = found
+        return 1
+
+    with ThreadPoolExecutor(4) as pool:
+        return sum(pool.map(run, todo))
+
+
+SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
+REVIEWS_CONFIGMAP = os.environ.get("REVIEWS_CONFIGMAP", "")
+
+
+class ConfigMapStore:
+    """Reads and writes one key of a ConfigMap through the in-cluster API, using the pod's service account."""
+
+    def __init__(self, name, key="reviews.json"):
+        with open(os.path.join(SA_DIR, "namespace")) as f:
+            ns = f.read().strip()
+        self.url = f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/configmaps/{name}"
+        self.key = key
+        self.ctx = ssl.create_default_context(cafile=os.path.join(SA_DIR, "ca.crt"))
+
+    def _request(self, method, body=None, ctype="application/json"):
+        with open(os.path.join(SA_DIR, "token")) as f:
+            token = f.read().strip()
+        req = urllib.request.Request(self.url, method=method, data=body,
+                                     headers={"Authorization": "Bearer " + token, "Content-Type": ctype})
+        with urllib.request.urlopen(req, timeout=15, context=self.ctx) as r:
+            return json.load(r)
+
+    def load(self):
+        return json.loads((self._request("GET").get("data") or {}).get(self.key) or "{}")
+
+    def save(self, items):
+        body = json.dumps({"data": {self.key: json.dumps(items)}}).encode()
+        self._request("PATCH", body, "application/merge-patch+json")
+
+
+class FileStore:
+    def __init__(self, directory):
+        os.makedirs(directory, exist_ok=True)
+        self.path = os.path.join(directory, "reviews.json")
+
+    def load(self):
+        try:
+            with open(self.path) as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+
+    def save(self, items):
+        with open(self.path + ".tmp", "w") as f:
+            json.dump(items, f)
+        os.replace(self.path + ".tmp", self.path)
+
+
+class Reviews:
+    """Shift-lead decisions on incidents, shared by everyone using the board."""
+
+    def __init__(self):
+        self.store = ConfigMapStore(REVIEWS_CONFIGMAP) if REVIEWS_CONFIGMAP else FileStore(DATA_DIR)
+        self.lock = threading.Lock()
+        try:
+            self.items = self.store.load()
+        except Exception as e:
+            print("reviews load error:", e, flush=True)
+            self.items = {}
+
+    def all(self):
+        with self.lock:
+            return dict(self.items)
+
+    def set(self, inc_id, status, note, by):
+        with self.lock:
+            items = dict(self.items)
+            if status:
+                items[inc_id] = {"status": status, "note": note, "by": by, "at": time.time()}
+            else:
+                items.pop(inc_id, None)
+            self.store.save(items)
+            self.items = items
+            return dict(items)
+
+
+reviews = Reviews()
 
 
 class Board:
@@ -504,6 +777,9 @@ class Board:
         self.incidents, self.stats = [], {}
         self.updated, self.error = None, None
         self.captions = {}
+        self.insights = {"hotspots": [], "sites": []}
+        self.causes, self._causes_key = [], None
+        self._report_cache = {}
         self.ask_sources = set()
         self.lock = threading.Lock()
 
@@ -511,40 +787,107 @@ class Board:
         try:
             chunks = fetch_chunks()
             sources = [s.get("source") for c in chunks for s in c.get("timeline") or [] if s.get("source")]
-            with ThreadPoolExecutor(8) as pool:
+            with ThreadPoolExecutor(DET_WORKERS) as pool:
                 dets = dict(zip(sources, pool.map(get_detections_or_none, sources)))
-            missing = [s for s, d in dets.items() if d is None]
+            missing = [s for s, d in dets.items() if d is None and s not in _det_missing]
             if missing:
-                time.sleep(5)
-                with ThreadPoolExecutor(2) as pool:
-                    dets.update(zip(missing, pool.map(get_detections_or_none, missing)))
-            failed = sum(d is None for d in dets.values())
+                time.sleep(10)
+                dets.update((s, get_detections_or_none(s)) for s in missing)
+            failed = sum(d is None for s, d in dets.items() if s not in _det_missing)
             if self.incidents and failed > 0.2 * len(dets):
                 self.error = f"Video backend busy ({failed} of {len(dets)} clips unreadable); showing the last good board."
                 print("refresh skipped:", self.error, flush=True)
                 return
-            incidents, stats, captions = build_board(chunks, dets)
-            with self.lock:
-                old = {i["id"]: i for i in self.incidents}
-                for inc in incidents:
-                    prev = old.get(inc["id"])
-                    if prev and prev.get("llm_key") == self._key(inc):
-                        inc.update({k: prev[k] for k in ("summary", "action", "llm_key")})
-                self.incidents, self.stats, self.captions = incidents, stats, captions
-                self.updated, self.error = time.time(), None
-            print(f"refreshed: {stats}", flush=True)
-            for inc in incidents:
-                if inc.get("llm_key") == self._key(inc):
-                    continue
-                out = llm_summarize(inc)
-                if out:
-                    with self.lock:
-                        inc["summary"] = out.get("what_happened") or inc["summary"]
-                        inc["action"] = out.get("action")
-                        inc["llm_key"] = self._key(inc)
+            self._publish(chunks, dets)
+            if classify_behaviors([c["narrative"] for c in self.captions.values()]):
+                self._publish(chunks, dets)
+            self._summarize()
+            self._find_causes()
         except Exception as e:
             self.error = str(e)
             print("refresh error:", e, flush=True)
+
+    def _publish(self, chunks, dets):
+        incidents, stats, captions, thresholds = build_board(chunks, dets)
+        insights = build_insights(chunks, dets, incidents, captions, thresholds)
+        with self.lock:
+            old = {i["id"]: i for i in self.incidents}
+            for inc in incidents:
+                prev = old.get(inc["id"])
+                if prev and prev.get("llm_key") == self._key(inc):
+                    inc.update({k: prev[k] for k in ("summary", "action", "llm_key")})
+            self.incidents, self.stats, self.captions, self.insights = incidents, stats, captions, insights
+            self.updated, self.error = time.time(), None
+        print(f"refreshed: {stats}", flush=True)
+
+    def _summarize(self):
+        for inc in list(self.incidents):
+            if inc.get("llm_key") == self._key(inc):
+                continue
+            out = llm_summarize(inc)
+            if out:
+                with self.lock:
+                    inc["summary"] = out.get("what_happened") or inc["summary"]
+                    inc["action"] = out.get("action")
+                    inc["llm_key"] = self._key(inc)
+
+    def _find_causes(self):
+        incidents = list(self.incidents)
+        key = hashlib.sha1(json.dumps([(i["id"], i["summary"]) for i in incidents]).encode()).hexdigest()
+        if key == self._causes_key or len(incidents) < 2:
+            return
+        listing = "\n".join(
+            f"{i['id']}: [{i['risk']}] {', '.join(EVENT_INFO[e][0] for e in i['events'])}; {i['scene']}; {i['summary']}"
+            for i in incidents)
+        out = llm_json(
+            "Group these warehouse safety incidents by recurring root cause, 2 to 5 groups, each incident in exactly "
+            "one group. Reply with JSON only: {\"causes\": [{\"cause\": short title, \"why\": one plain sentence, "
+            "\"fix\": one imperative action, \"ids\": [incident ids]}]}. Never mention AI models or detectors.\n\n"
+            + listing, 900)
+        if not out:
+            return
+        known = {i["id"] for i in incidents}
+        causes = []
+        for c in out.get("causes") or []:
+            ids = [x for x in c.get("ids") or [] if x in known]
+            if ids and c.get("cause"):
+                causes.append({"cause": c["cause"], "why": c.get("why", ""), "fix": c.get("fix", ""), "ids": ids})
+        with self.lock:
+            self.causes = sorted(causes, key=lambda c: -len(c["ids"]))
+            self._causes_key = key
+
+    def insights_snapshot(self):
+        with self.lock:
+            return {**self.insights, "causes": self.causes, "updated": self.updated}
+
+    def report(self):
+        with self.lock:
+            incidents, stats, insights, causes = list(self.incidents), dict(self.stats), self.insights, list(self.causes)
+        revs = reviews.all()
+        status = [revs.get(i["id"], {}).get("status", "open") for i in incidents]
+        facts = {
+            "incidents": len(incidents), "high": stats.get("high"), "medium": stats.get("medium"),
+            "by_type": {k: stats.get(k) for k in ("near_miss", "blocked", "crowding", "behavior")},
+            "reviewed": {s: status.count(s) for s in ("open", "acknowledged", "false_alarm")},
+            "top_incidents": [{"risk": i["risk"], "where": i["scene"], "what": i["summary"]} for i in incidents[:5]],
+            "hotspots": [{"where": s["spot"], "incidents": len(s["incidents"]), "close_call_sec": s["close_sec"],
+                          "crowding_sec": s["crowd_sec"]} for s in insights["hotspots"][:3]],
+            "sites": insights["sites"],
+            "causes": [{"cause": c["cause"], "count": len(c["ids"]), "fix": c["fix"]} for c in causes],
+        }
+        key = hashlib.sha1(json.dumps(facts, sort_keys=True).encode()).hexdigest()
+        if key not in self._report_cache:
+            out = llm_json(
+                "Write an end-of-shift safety report for a warehouse supervisor from these facts. Reply with JSON only: "
+                "{\"headline\": one sentence, \"highlights\": [3 to 5 short sentences], "
+                "\"actions\": [3 prioritised imperative actions]}. Use only the facts, plain language, no mention of "
+                "AI models, detectors or captions. close_call_sec is time people spent within 1 m of a vehicle.\n\nFACTS: "
+                + json.dumps(facts), 700)
+            if not out:
+                return {"headline": "", "highlights": [], "actions": [], "generated": time.time(), "error": "summary unavailable"}
+            self._report_cache[key] = {"headline": out.get("headline", ""), "highlights": out.get("highlights") or [],
+                                       "actions": out.get("actions") or [], "generated": time.time()}
+        return self._report_cache[key]
 
     @staticmethod
     def _key(inc):
@@ -558,8 +901,9 @@ class Board:
 
     def snapshot(self):
         with self.lock:
-            return {"incidents": self.incidents, "stats": self.stats, "updated": self.updated,
+            snap = {"incidents": self.incidents, "stats": self.stats, "updated": self.updated,
                     "error": self.error, "locations": LOCATIONS}
+        return {**snap, "reviews": reviews.all()}
 
     def can_stream(self, source):
         with self.lock:
@@ -620,6 +964,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps({"ok": True, "updated": board.updated}))
         if url.path == "/api/board":
             return self._send(200, json.dumps(board.snapshot()))
+        if url.path == "/api/insights":
+            return self._send(200, json.dumps(board.insights_snapshot()))
+        if url.path == "/api/report":
+            return self._send(200, json.dumps(board.report()))
         if url.path == "/clip":
             return self._clip(urllib.parse.parse_qs(url.query).get("source", [""])[0])
         if url.path == "/api/detections":
@@ -637,12 +985,26 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/refresh":
             threading.Thread(target=board.refresh, daemon=True).start()
             return self._send(202, json.dumps({"ok": True}))
-        if path == "/api/ask":
+        try:
+            length = min(int(self.headers.get("Content-Length") or 0), 10_000)
+            body = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(body, dict):
+                raise ValueError
+        except ValueError:
+            return self._send(400, json.dumps({"error": "invalid JSON"}))
+        if path == "/api/review":
+            inc_id, status = str(body.get("id") or ""), body.get("status")
+            if not ID_RE.match(inc_id) or (status is not None and status not in REVIEW_STATUSES):
+                return self._send(400, json.dumps({"error": "need a valid id and status acknowledged, false_alarm or null"}))
+            note = str(body.get("note") or "").strip()[:500]
+            by = str(body.get("by") or "").strip()[:60]
             try:
-                length = min(int(self.headers.get("Content-Length") or 0), 10_000)
-                question = (json.loads(self.rfile.read(length) or b"{}").get("question") or "").strip()
-            except (ValueError, AttributeError):
-                return self._send(400, json.dumps({"error": "invalid JSON"}))
+                return self._send(200, json.dumps({"reviews": reviews.set(inc_id, status, note, by)}))
+            except Exception as e:
+                print("review save error:", e, flush=True)
+                return self._send(502, json.dumps({"error": "could not save the review"}))
+        if path == "/api/ask":
+            question = str(body.get("question") or "").strip()
             if not question or len(question) > 300:
                 return self._send(400, json.dumps({"error": "question must be 1-300 characters"}))
             try:
