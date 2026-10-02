@@ -106,8 +106,8 @@
 </header>
 <div class="warn" id="warn" hidden></div>
 <form class="ask" id="askForm">
-  <input id="askInput" maxlength="300" placeholder="Ask the floor, e.g. &quot;person walking behind a reversing forklift&quot;" autocomplete="off">
-  <button type="submit" class="primary" id="askBtn">Ask the floor</button>
+  <input id="askInput" maxlength="300" placeholder="Search all warehouse footage, e.g. &quot;person walking behind a reversing forklift&quot;" autocomplete="off">
+  <button type="submit" class="primary" id="askBtn">Search footage</button>
   <button type="button" class="ex">person walking behind a reversing forklift</button>
   <button type="button" class="ex">worker without a hard hat near a forklift</button>
   <button type="button" class="ex">robot waiting for a pallet jack to pass</button>
@@ -406,7 +406,7 @@ function selectNextAfter(id) {
   state.cam = 0;
 }
 
-/* ---------- ask the floor ---------- */
+/* ---------- search footage ---------- */
 function mdLite(text) {
   const body = (text || "").replace(/^\s*#*\s*(\*\*)?answer:?(\*\*)?:?\s*\n/i, "").replace(/^#+\s*(.*)$/gm, "**$1**");
   const lines = esc(body).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").split("\n");
@@ -424,7 +424,7 @@ function renderAsk() {
   const back = `<button id="backToQueue">Back to incidents</button>`;
   if (state.askBusy) { $("detail").innerHTML = `<div class="empty">Searching the warehouse cameras for “${esc($("askInput").value)}”…</div>`; return; }
   const r = state.ask;
-  const head = `<h2>Ask the floor</h2><div class="meta">“${esc(r.question)}”${r.clips ? ` · ${r.clips.length} matching moment${r.clips.length === 1 ? "" : "s"} from hybrid search` : ""}</div>`;
+  const head = `<h2>Search results</h2><div class="meta">“${esc(r.question)}”${r.clips ? ` · ${r.clips.length} matching moment${r.clips.length === 1 ? "" : "s"} across all warehouse footage` : ""}</div>`;
   if (r.error || !r.clips.length) {
     $("detail").innerHTML = head + `<div class="empty">${r.error ? `Search failed: ${esc(r.error)}` : "No matching moments. Try different wording."}</div><div class="toolbar">${back}</div>`;
     $("backToQueue").onclick = backToQueue;
