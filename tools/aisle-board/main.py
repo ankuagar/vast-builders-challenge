@@ -60,15 +60,26 @@ class VSS:
             return self.token
 
     def get(self, path, retry=True):
-        req = urllib.request.Request(VSS_URL + path, headers={"Authorization": "Bearer " + self.get_token()})
+        return self._call(path, None, retry)
+
+    def post(self, path, body, retry=True):
+        return self._call(path, body, retry)
+
+    def _call(self, path, body, retry):
+        headers = {"Authorization": "Bearer " + self.get_token()}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(VSS_URL + path, data=data, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with urllib.request.urlopen(req, timeout=90) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
             if e.code == 401 and retry:
                 with self.lock:
                     self.token = None
-                return self.get(path, retry=False)
+                return self._call(path, body, retry=False)
             raise
 
 
@@ -111,16 +122,25 @@ def fetch_chunks():
     return chunks
 
 
+def scene_and_camera(filename, camera_id=None):
+    rm = RUN_RE.search(filename or "")
+    if rm:
+        return f"run {rm.group('run')}", rm.group("cam").replace("_", " ")
+    return (filename or "").split("_chunk")[0], camera_id or "camera"
+
+
 def build_board(chunks):
-    incidents, views_total, parsed_total = {}, 0, 0
+    incidents, views_total, parsed_total, captions = {}, 0, 0, {}
     for c in chunks:
-        fn = c.get("filename", "")
-        rm = RUN_RE.search(fn)
-        run = f"run {rm.group('run')}" if rm else fn.split("_chunk")[0]
-        cam = rm.group("cam").replace("_", " ") if rm else (c.get("camera_id") or "camera")
+        run, cam = scene_and_camera(c.get("filename", ""), c.get("camera_id"))
         for seg in c.get("timeline") or []:
             views_total += 1
             p = parse_caption(seg.get("reasoning_content"))
+            captions[seg.get("source")] = {
+                "scene": run, "camera": cam,
+                "narrative": p["narrative"] if p else (seg.get("reasoning_content") or ""),
+                "events": p["events"] if p else [], "risk": p["risk"] if p else "",
+            }
             if not p:
                 continue
             parsed_total += 1
@@ -170,7 +190,7 @@ def build_board(chunks):
         "near_miss": sum("near_miss" in i["categories"] for i in flagged),
         "blocked": sum("blocked" in i["categories"] for i in flagged),
     }
-    return flagged, stats
+    return flagged, stats, captions
 
 
 _llm_cache = {}
@@ -213,20 +233,20 @@ class Board:
     def __init__(self):
         self.incidents, self.stats = [], {}
         self.updated, self.error = None, None
-        self.sources = set()
+        self.captions = {}
+        self.ask_sources = set()
         self.lock = threading.Lock()
 
     def refresh(self):
         try:
-            incidents, stats = build_board(fetch_chunks())
+            incidents, stats, captions = build_board(fetch_chunks())
             with self.lock:
                 old = {i["id"]: i for i in self.incidents}
                 for inc in incidents:
                     prev = old.get(inc["id"])
                     if prev and prev.get("llm_key") == self._key(inc):
                         inc.update({k: prev[k] for k in ("summary", "action", "llm_key")})
-                self.incidents, self.stats = incidents, stats
-                self.sources = {v["source"] for i in incidents for v in i["views"]}
+                self.incidents, self.stats, self.captions = incidents, stats, captions
                 self.updated, self.error = time.time(), None
             print(f"refreshed: {stats}", flush=True)
             for inc in incidents:
@@ -255,6 +275,37 @@ class Board:
         with self.lock:
             return {"incidents": self.incidents, "stats": self.stats, "updated": self.updated,
                     "error": self.error, "locations": LOCATIONS}
+
+    def can_stream(self, source):
+        with self.lock:
+            return source in self.captions or source in self.ask_sources
+
+    def ask(self, question):
+        body = {"query": question, "top_k": 8, "llm_top_n": 3, "min_similarity": 0.25,
+                "metadata_filters": {"location": LOCATIONS[0]} if len(LOCATIONS) == 1 else {}}
+        res = vss.post("/api/v1/agent/search-and-answer", body)
+        clips = []
+        for ch in (res.get("evidence") or {}).get("chunks") or []:
+            src = ch.get("preview_source")
+            if not src:
+                continue
+            with self.lock:
+                cap = self.captions.get(src)
+            scene, cam = scene_and_camera(ch.get("filename", ""))
+            clips.append({
+                "source": src,
+                "scene": cap["scene"] if cap else scene,
+                "camera": cap["camera"] if cap else cam,
+                "start_sec": ch.get("best_match_start_sec"),
+                "end_sec": ch.get("best_match_end_sec"),
+                "similarity": ch.get("similarity_score"),
+                "narrative": cap["narrative"] if cap else "",
+                "events": cap["events"] if cap else [],
+                "risk": cap["risk"] if cap else "",
+            })
+        with self.lock:
+            self.ask_sources.update(c["source"] for c in clips)
+        return {"question": question, "answer": res.get("answer") or "", "clips": clips}
 
 
 board = Board()
@@ -289,13 +340,27 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, json.dumps({"error": "not found"}))
 
     def do_POST(self):
-        if urllib.parse.urlparse(self.path).path == "/api/refresh":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/api/refresh":
             threading.Thread(target=board.refresh, daemon=True).start()
             return self._send(202, json.dumps({"ok": True}))
+        if path == "/api/ask":
+            try:
+                length = min(int(self.headers.get("Content-Length") or 0), 10_000)
+                question = (json.loads(self.rfile.read(length) or b"{}").get("question") or "").strip()
+            except (ValueError, AttributeError):
+                return self._send(400, json.dumps({"error": "invalid JSON"}))
+            if not question or len(question) > 300:
+                return self._send(400, json.dumps({"error": "question must be 1-300 characters"}))
+            try:
+                return self._send(200, json.dumps(board.ask(question)))
+            except Exception as e:
+                print("ask error:", e, flush=True)
+                return self._send(502, json.dumps({"error": f"search failed: {e}"}))
         self._send(404, json.dumps({"error": "not found"}))
 
     def _clip(self, source):
-        if source not in board.sources:
+        if not board.can_stream(source):
             return self._send(403, json.dumps({"error": "unknown clip"}))
         q = urllib.parse.urlencode({"source": source, "token": vss.get_token()})
         headers = {}

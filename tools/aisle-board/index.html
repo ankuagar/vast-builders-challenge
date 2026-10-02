@@ -23,7 +23,19 @@
   .stat .v { font-size: 26px; font-weight: 700; }
   .stat .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
   .stat.high .v { color: var(--high); } .stat.medium .v { color: var(--medium); }
-  main { display: grid; grid-template-columns: 420px 1fr; gap: 16px; padding: 0 22px 22px; height: calc(100vh - 190px); min-height: 520px; }
+  main { display: grid; grid-template-columns: 420px 1fr; gap: 16px; padding: 0 22px 22px; height: calc(100vh - 250px); min-height: 520px; }
+  .ask { display: flex; gap: 8px; align-items: center; padding: 14px 22px 0; flex-wrap: wrap; }
+  .ask input { flex: 1; min-width: 280px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; }
+  .ask input:focus { outline: none; border-color: var(--accent); }
+  .ask button[type=submit] { background: var(--accent); border-color: var(--accent); color: #001; font-weight: 600; padding: 8px 16px; }
+  .ask .ex { font-size: 12px; color: var(--muted); background: transparent; border-style: dashed; }
+  .answer { line-height: 1.55; }
+  .answer ul { margin: 6px 0; padding-left: 20px; }
+  .hits { display: flex; flex-direction: column; gap: 6px; }
+  .hit { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 8px 10px; }
+  .hit.on { border-color: var(--accent); }
+  .hit .score { font-variant-numeric: tabular-nums; color: var(--accent); min-width: 42px; }
+  .hit .txt { color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .queue { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
   .filters { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .filters button.on { background: var(--accent); border-color: var(--accent); color: #001; }
@@ -66,6 +78,13 @@
   <button id="refresh">Refresh</button>
 </header>
 <div class="warn" id="warn" hidden></div>
+<form class="ask" id="askForm">
+  <input id="askInput" maxlength="300" placeholder="Ask the floor, e.g. &quot;person walking behind a reversing forklift&quot;" autocomplete="off">
+  <button type="submit" id="askBtn">Ask the floor</button>
+  <button type="button" class="ex">person walking behind a reversing forklift</button>
+  <button type="button" class="ex">worker without a hard hat near a forklift</button>
+  <button type="button" class="ex">forklift parked in an aisle</button>
+</form>
 <section class="stats" id="stats"></section>
 <main>
   <section class="queue">
@@ -86,6 +105,7 @@ const FILTERS = [
 ];
 let data = { incidents: [], stats: {} };
 let filter = "all", selected = null, selectedCam = 0, showAck = false;
+let mode = "incident", askResult = null, askSel = 0, askBusy = false;
 const acked = new Set(JSON.parse(localStorage.getItem("aisle-acked") || "[]"));
 
 const $ = (id) => document.getElementById(id);
@@ -135,10 +155,64 @@ function renderList() {
       <div class="sum">${esc(i.summary)}</div>
       <div class="chips">${i.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("")}</div>
     </div>`).join("");
-  $("list").querySelectorAll(".card").forEach((c) => c.onclick = () => { selected = c.dataset.id; selectedCam = 0; render(); });
+  $("list").querySelectorAll(".card").forEach((c) => c.onclick = () => { selected = c.dataset.id; selectedCam = 0; mode = "incident"; render(); });
+}
+
+function mdLite(text) {
+  const lines = esc(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").split("\n");
+  let html = "", inList = false;
+  for (const line of lines) {
+    const m = line.match(/^\s*[-*]\s+(.*)/);
+    if (m) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${m[1]}</li>`; continue; }
+    if (inList) { html += "</ul>"; inList = false; }
+    if (line.trim()) html += `<div>${line}</div>`;
+  }
+  return html + (inList ? "</ul>" : "");
+}
+
+function renderAsk() {
+  if (askBusy) { $("detail").innerHTML = `<div class="empty">Searching the warehouse cameras for “${esc($("askInput").value)}”…</div>`; return; }
+  const r = askResult;
+  if (r.error) { $("detail").innerHTML = `<div class="empty">Search failed: ${esc(r.error)}</div>`; return; }
+  if (!r.clips.length) { $("detail").innerHTML = `<h2>Ask the floor</h2><div class="meta">“${esc(r.question)}”</div><div class="empty">No matching moments. Try different wording.</div>`; return; }
+  const c = r.clips[askSel] || r.clips[0];
+  $("detail").innerHTML = `
+    <h2>Ask the floor</h2>
+    <div class="meta">“${esc(r.question)}” · ${r.clips.length} matching moments from hybrid search</div>
+    <video id="player" src="${clipUrl(c.source)}" controls autoplay muted loop playsinline></video>
+    <div class="meta" style="margin-top:8px">${esc(c.scene)} · ${esc(c.camera)} · ${fmtSec(c.start_sec)}–${fmtSec(c.end_sec)}${c.risk ? ` · <span class="badge ${c.risk}">${c.risk}</span>` : ""}
+      ${c.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join(" ")}</div>
+    <div class="box answer"><div class="lbl">Answer</div>${mdLite(r.answer)}</div>
+    <div class="box"><div class="lbl">Matching clips</div><div class="hits">${r.clips.map((h, n) => `
+      <button class="hit ${n === askSel ? "on" : ""}" data-n="${n}">
+        <span class="score">${(h.similarity ?? 0).toFixed(2)}</span>
+        <span><strong>${esc(h.scene)} · ${esc(h.camera)}</strong> <span class="when">${fmtSec(h.start_sec)}–${fmtSec(h.end_sec)}</span>
+        <div class="txt">${esc(h.narrative || "")}</div></span>
+      </button>`).join("")}</div></div>`;
+  $("detail").querySelectorAll(".hit").forEach((b) => b.onclick = () => { askSel = +b.dataset.n; renderAsk(); });
+}
+
+async function ask(question) {
+  question = question.trim();
+  if (!question || askBusy) return;
+  $("askInput").value = question;
+  mode = "ask"; askBusy = true; askSel = 0; selected = null;
+  $("askBtn").disabled = true;
+  renderList(); renderAsk();
+  try {
+    const r = await fetch(`${BASE}api/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
+    const body = await r.json();
+    askResult = r.ok ? body : { question, error: body.error || `HTTP ${r.status}` };
+  } catch (e) {
+    askResult = { question, error: String(e) };
+  }
+  askBusy = false;
+  $("askBtn").disabled = false;
+  if (mode === "ask") renderAsk();
 }
 
 function renderDetail() {
+  if (mode === "ask") return renderAsk();
   const i = data.incidents.find((x) => x.id === selected);
   if (!i) { $("detail").innerHTML = `<div class="empty">Select an incident to review the clip.</div>`; return; }
   const v = i.views[selectedCam] || i.views[0];
@@ -175,7 +249,7 @@ async function load() {
     $("sub").textContent = `${(data.locations || []).join(", ")} · ${data.incidents.length} incidents · updated ${when}`;
     $("warn").hidden = !data.error;
     $("warn").textContent = data.error ? `Last refresh failed: ${data.error}` : "";
-    if (!selected && data.incidents.length) selected = data.incidents[0].id;
+    if (!selected && mode === "incident" && data.incidents.length) selected = data.incidents[0].id;
     renderStats(); renderFilters(); renderList();
     if (!document.getElementById("player")) renderDetail();
   } catch (e) {
@@ -183,6 +257,8 @@ async function load() {
   }
 }
 
+$("askForm").onsubmit = (e) => { e.preventDefault(); ask($("askInput").value); };
+document.querySelectorAll(".ask .ex").forEach((b) => b.onclick = () => ask(b.textContent));
 $("refresh").onclick = async () => { await fetch(`${BASE}api/refresh`, { method: "POST" }); setTimeout(load, 4000); };
 $("showAck").onclick = () => { showAck = !showAck; $("showAck").textContent = showAck ? "Hide acknowledged" : "Show acknowledged"; render(); };
 load();
