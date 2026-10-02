@@ -11,8 +11,9 @@
     --low: #52c41a; --accent: #3ea6ff; --group: #b37feb;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
-  header { display: flex; align-items: center; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--line); }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text);
+         display: flex; flex-direction: column; height: 100vh; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 22px; border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 18px; letter-spacing: .3px; }
   .sub, .when, .muted { color: var(--muted); font-size: 12px; }
   header .sub { font-size: 13px; }
@@ -24,27 +25,26 @@
   button.on { background: var(--accent); border-color: var(--accent); color: #001; }
   .warn { color: var(--medium); font-size: 12px; padding: 6px 22px 0; }
 
-  .ask { display: flex; gap: 8px; align-items: center; padding: 14px 22px 0; flex-wrap: wrap; }
-  .ask input { flex: 1; min-width: 280px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; }
+  .ask { display: flex; gap: 8px; align-items: center; padding: 12px 22px 0; flex-wrap: wrap; }
+  .ask input { flex: 1; min-width: 260px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; }
   .ask input:focus { outline: none; border-color: var(--accent); }
   .ask .ex { font-size: 12px; color: var(--muted); background: transparent; border-style: dashed; }
 
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; padding: 14px 22px; }
-  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; text-align: left; }
-  .stat .v { font-size: 24px; font-weight: 700; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; padding: 12px 22px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; text-align: left; }
+  .stat .v { font-size: 22px; font-weight: 700; }
   .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
   .stat.high .v { color: var(--high); } .stat.medium .v { color: var(--medium); } .stat.low .v { color: var(--low); }
   button.stat:hover { border-color: var(--accent); }
   button.stat.on { background: var(--panel); color: var(--text); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .stat.info { border-style: dashed; }
 
-  main { display: grid; grid-template-columns: 440px 1fr; gap: 16px; padding: 0 22px 22px; height: calc(100vh - 252px); min-height: 520px; }
+  main { display: grid; grid-template-columns: 440px 1fr; gap: 16px; padding: 0 22px 16px; flex: 1; min-height: 460px; }
   .queue, .detail { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
   .queue { display: flex; flex-direction: column; overflow: hidden; }
   .filters { padding: 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
   .fgroup { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .fgroup .flabel { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; width: 38px; }
-  .fgroup button { font-size: 12px; padding: 4px 10px; }
+  .fgroup .flabel { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; width: 36px; }
+  .fgroup button { font-size: 12px; padding: 4px 7px; }
   .fstatus { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
   .fstatus label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text); }
   .fstatus button { font-size: 12px; padding: 2px 8px; }
@@ -68,10 +68,19 @@
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #444; flex: none; }
   .dot.high { background: var(--high); } .dot.medium { background: var(--medium); } .dot.low { background: var(--low); }
 
-  .detail { padding: 16px; overflow-y: auto; }
+  .detail { padding: 16px; overflow-y: auto; container-type: inline-size; }
+  .split { display: grid; gap: 14px; margin-bottom: 10px; }
+  .split .decision .box:last-of-type { margin-bottom: 0; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  @container (min-width: 720px) {
+    .split { grid-template-columns: minmax(0, 3fr) minmax(250px, 2fr); align-items: start; }
+    .split .decision { order: 2; }
+  }
+  .info { cursor: help; border-bottom: 1px dotted var(--muted); }
+  .big.unclear { color: var(--muted); }
   .detail h2 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
   .detail .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
-  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 14px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 0; }
   .toolbar button { font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
   .toolbar button.on { background: var(--panel2); color: var(--accent); border-color: var(--accent); }
   video { width: 100%; max-height: 50vh; background: #000; border-radius: 8px; display: block; }
@@ -108,10 +117,9 @@
 <form class="ask" id="askForm">
   <input id="askInput" maxlength="300" placeholder="Search all warehouse footage, e.g. &quot;person walking behind a reversing forklift&quot;" autocomplete="off">
   <button type="submit" class="primary" id="askBtn">Search footage</button>
-  <button type="button" class="ex">person walking behind a reversing forklift</button>
-  <button type="button" class="ex">worker without a hard hat near a forklift</button>
-  <button type="button" class="ex">robot waiting for a pallet jack to pass</button>
-  <button type="button" class="ex">aisle blocked by boxes or a parked vehicle</button>
+  <button type="button" class="ex">person behind a reversing forklift</button>
+  <button type="button" class="ex">robot waiting for a pallet jack</button>
+  <button type="button" class="ex">aisle blocked by boxes</button>
 </form>
 <section class="stats" id="stats"></section>
 <main>
@@ -133,7 +141,7 @@ const RISKS = [["high", "High risk"], ["medium", "Medium risk"], ["low", "Low ri
 
 const state = {
   type: "all", risk: "all", site: "all",
-  showAck: false, selected: null, cam: 0,
+  showAck: false, selected: null, cam: 0, moreAngles: false,
   mode: "incident", ask: null, askSel: 0, askBusy: false,
   showBoxes: localStorage.getItem("aisle-boxes") !== "off",
 };
@@ -146,7 +154,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtSec = (s) => { const t = Math.round(s || 0); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
 const fmtRange = (a, b) => `${fmtSec(a)}–${fmtSec(b)}`;
-const fmtGap = (g) => g == null ? "n/a" : g <= 0.1 ? "touching" : `≈ ${g.toFixed(1)} m`;
+const fmtGap = (g) => g == null ? "n/a" : g < 0.2 ? "< 0.2 m" : `${g.toFixed(1)} m`;
 const gapClass = (g) => g == null ? "" : g < 1 ? "close" : g < 3 ? "mid" : "far";
 const siteOf = (scene) => (scene || "").split(" · ")[0];
 const clipUrl = (src) => `${BASE}clip?source=${encodeURIComponent(src)}`;
@@ -166,18 +174,22 @@ function setFilter(dim, value) {
 
 /* ---------- shared components ---------- */
 function riskBadge(risk, events) {
-  return events && events.length ? `<span class="badge ${risk || "low"}">${risk || "low"}</span>` : `<span class="badge none">no conflict</span>`;
+  return events && events.length ? `<span class="badge ${risk || "low"}">${risk || "low"}</span>` : `<span class="badge none">no issue</span>`;
 }
 function eventChips(events) {
   return (events || []).map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("");
 }
 function measureChips(view) {
-  if (!view) return "";
+  if (!view || !view.events || !view.events.length) return "";
   let html = "";
-  if (view.events && view.events.length && view.yolo_gap_m != null) html += `<span class="chip measure">gap ${fmtGap(view.yolo_gap_m)}</span>`;
-  if (view.events && view.events.includes("CROWDING")) html += `<span class="chip measure">group of ${view.crowd} (usual ${view.crowd_typical})</span>`;
+  if (view.gap_status === "measured") html += `<span class="chip measure">${fmtGap(view.yolo_gap_m)} from vehicle</span>`;
+  if (view.gap_status === "inconclusive") html += `<span class="chip">distance unclear</span>`;
+  if (view.events.includes("CROWDING")) html += `<span class="chip measure">${view.crowd} people bunched (usual ${view.crowd_typical})</span>`;
   return html;
 }
+const HOW_MEASURED = "Boxes come from an off-the-shelf object detector. It has no forklift or robot class, so vehicles are " +
+  "recognised as look-alike objects and may be missed in some frames. Distances are estimated from the video, " +
+  "using a person's height (about 1.7 m) as the ruler.";
 function viewBySource(source) {
   for (const inc of data.incidents) {
     const v = inc.views.find((x) => x.source === source);
@@ -187,39 +199,47 @@ function viewBySource(source) {
 }
 function videoBlock(source) {
   return `<div class="vwrap"><video id="player" src="${clipUrl(source)}" controls autoplay muted loop playsinline></video><canvas id="overlay"></canvas></div>
-    <div class="ovl"><label><input type="checkbox" id="boxesToggle" ${state.showBoxes ? "checked" : ""}> YOLO boxes, gap and groups</label><span class="muted" id="ovlNote"></span></div>`;
+    <div class="ovl"><label><input type="checkbox" id="boxesToggle" ${state.showBoxes ? "checked" : ""}> Show detection boxes</label>
+      <span class="muted info" title="${esc(HOW_MEASURED)}">How is this measured?</span><span class="muted" id="ovlNote"></span></div>`;
 }
 function seekPlayer(t) { const p = $("player"); if (p) { p.pause(); p.currentTime = Math.max(0, t || 0); } }
 
-function evidenceBox(view, clipStart) {
-  return `<div class="box" id="evidence"><div class="lbl">Measured evidence · ${esc(view.camera)}</div><span class="muted">Measuring…</span></div>`;
+function evidenceBox(view) {
+  return `<div class="box" id="evidence"><div class="lbl">Measurements · ${esc(view.camera)}</div><span class="muted">Measuring…</span></div>`;
 }
 function fillEvidence(view, clipStart, det) {
   const box = $("evidence");
   if (!box) return;
-  const said = view.gap ? `Cosmos caption says <strong>${esc(view.gap)}</strong>.` : "Cosmos caption gives no distance.";
-  let html = `<div class="lbl">Measured evidence · ${esc(view.camera)}</div>`;
+  const said = view.gap ? `The AI description says <strong>${esc(view.gap)}</strong>.` : "The AI description gives no distance.";
+  let html = `<div class="lbl">Measurements · ${esc(view.camera)}</div>`;
   if (!det) {
-    html += `<span class="muted">No YOLO detections for this clip. ${said}</span>`;
+    html += `<span class="muted">No measurements for this clip. ${said}</span>`;
   } else {
     const c = det.closest;
-    html += c
-      ? `<div class="measure-row"><span class="big ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span>
-           <span class="muted">closest person–vehicle gap at ${fmtSec(clipStart + c.t)}${c.held ? " (vehicle box held from an earlier frame)" : ""}</span>
-           <button data-seek="${c.t}">Jump to moment</button></div>`
-      : `<div class="measure-row"><span class="muted">No vehicle seen near a person from this angle.</span></div>`;
+    if (c && view.gap_status === "inconclusive") {
+      html += `<div class="measure-row"><span class="big unclear">Distance unclear</span>
+           <span class="muted">${said} The detector only recognised the vehicle in ${det.equipment_frames} of ${det.frames.length} frames
+           and measured ${fmtGap(c.gap_m)}, so watch the clip to judge.</span>
+           <button data-seek="${c.t}">Jump to closest frame</button></div>`;
+    } else if (c) {
+      html += `<div class="measure-row"><span class="big ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span>
+           <span class="muted">closest a person got to a vehicle, at ${fmtSec(clipStart + c.t)}</span>
+           <button data-seek="${c.t}">Jump to moment</button></div>
+           <div class="muted">${said}</div>`;
+    } else {
+      html += `<div class="measure-row"><span class="muted">No vehicle seen near a person from this camera. ${said}</span></div>`;
+    }
     if (view.events && view.events.includes("CROWDING")) {
-      html += `<div class="measure-row"><span class="big group">group of ${det.crowd}</span>
-           <span class="muted">people within ~0.5 m for 1s+, vs. usual ${view.crowd_typical} on this camera · ${det.people} in frame</span>
+      html += `<div class="measure-row" style="margin-top:6px"><span class="big group">${det.crowd} people bunched</span>
+           <span class="muted">within arm's reach for over a second; this camera usually sees groups of ${view.crowd_typical} · ${det.people} people in view</span>
            ${det.crowd_t != null ? `<button data-seek="${det.crowd_t}">Jump to group</button>` : ""}</div>`;
     }
-    html += `<div class="muted">${said} Distances are 2D image estimates scaled by person height (~1.7 m).</div>`;
   }
   box.innerHTML = html;
   box.querySelectorAll("button[data-seek]").forEach((b) => b.onclick = () => seekPlayer(+b.dataset.seek));
 }
 function captionBox(view) {
-  return `<div class="box"><div class="lbl">Cosmos caption · ${esc(view.camera)}</div>
+  return `<div class="box"><div class="lbl">AI description · ${esc(view.camera)}</div>
     <div class="row" style="margin-bottom:8px">${riskBadge(view.risk, view.events)}<div class="chips" style="margin:0">${eventChips(view.events)}</div></div>
     ${esc(view.narrative || "No caption available.")}</div>`;
 }
@@ -232,16 +252,14 @@ async function loadDetections(source) {
   }
   return detCache[source];
 }
-async function attachOverlay(source, onInfo) {
+async function attachOverlay(source, onInfo, showGap = true) {
   const run = ++overlayRun;
   const toggle = $("boxesToggle");
   if (toggle) toggle.onchange = () => { state.showBoxes = toggle.checked; localStorage.setItem("aisle-boxes", state.showBoxes ? "on" : "off"); };
   const det = await loadDetections(source);
   if (run !== overlayRun) return;
   if (onInfo) onInfo(det);
-  if (!det) { if ($("ovlNote")) $("ovlNote").textContent = "No YOLO detections for this clip."; return; }
-  const labels = Object.entries(det.equipment_labels || {}).map(([k, n]) => `${k} ×${n}`).join(", ");
-  $("ovlNote").textContent = `Forklifts, AGVs and robots aren't YOLO classes; vehicle spotted as ${labels || "nothing"} in ${det.equipment_frames}/${det.frames.length} frames.`;
+  if (!det) { if ($("ovlNote")) $("ovlNote").textContent = "· no detection boxes for this clip"; return; }
   const [sh, sw] = det.shape;
   const draw = () => {
     if (run !== overlayRun) return;
@@ -257,12 +275,12 @@ async function attachOverlay(source, onInfo) {
       const ox = (cw - dw) / 2, oy = (ch - dh) / 2, kx = dw / sw, ky = dh / sh;
       const fr = det.frames[Math.min(det.frames.length - 1, Math.floor(video.currentTime * det.fps))];
       const X = (x) => ox + x * kx, Y = (y) => oy + y * ky;
-      const close = fr.gap_m != null && fr.gap_m < 1;
+      const close = showGap && fr.gap_m != null && fr.gap_m < 1;
       ctx.lineWidth = 2.5; ctx.font = "bold 13px system-ui";
       for (const b of fr.e) {
         ctx.setLineDash(fr.held ? [6, 5] : []);
         ctx.strokeStyle = "#faad14"; ctx.strokeRect(X(b[0]), Y(b[1]), (b[2] - b[0]) * kx, (b[3] - b[1]) * ky);
-        ctx.fillStyle = "#faad14"; ctx.fillText(fr.held ? "vehicle (held)" : "vehicle", X(b[0]) + 4, Y(b[1]) - 6);
+        ctx.fillStyle = "#faad14"; ctx.fillText("vehicle", X(b[0]) + 4, Y(b[1]) - 6);
       }
       ctx.setLineDash([]);
       const group = new Set(fr.c && fr.c.length >= 4 ? fr.c : []);
@@ -278,7 +296,7 @@ async function attachOverlay(source, onInfo) {
         ctx.fillStyle = "rgba(0,0,0,.7)"; ctx.fillRect(X(x1) - 2, Y(y1) - 22, ctx.measureText(label).width + 8, 18);
         ctx.fillStyle = "#b37feb"; ctx.fillText(label, X(x1) + 2, Y(y1) - 8);
       }
-      if (fr.line) {
+      if (showGap && fr.line) {
         const [x1, y1, x2, y2] = fr.line;
         ctx.strokeStyle = close ? "#ff4d4f" : "#ffffff"; ctx.setLineDash([4, 4]);
         ctx.beginPath(); ctx.moveTo(X(x1), Y(y1)); ctx.lineTo(X(x2), Y(y2)); ctx.stroke(); ctx.setLineDash([]);
@@ -294,7 +312,6 @@ async function attachOverlay(source, onInfo) {
 
 /* ---------- summary cards (each card = what you'd see after clicking it) ---------- */
 function renderStats() {
-  const s = data.stats || {};
   const card = (label, value, cls, dim, val) => {
     const on = dim && state[dim] === val;
     return `<button class="stat ${cls} ${on ? "on" : ""}" data-dim="${dim}" data-val="${val}" title="${on ? "Clear this filter" : `Show ${label.toLowerCase()}`}">
@@ -305,8 +322,7 @@ function renderStats() {
     `<button class="stat ${state.type === "all" && state.risk === "all" ? "on" : ""}" data-reset="1" title="Clear type and risk filters">
        <div class="v">${countIf(() => true)}</div><div class="k">${scopeLabel}</div></button>` +
     RISKS.map(([r, label]) => card(label, countIf((i) => typeOk(i) && i.risk === r), r, "risk", r)).join("") +
-    TYPES.map(([t, label]) => card(label, countIf((i) => riskOk(i) && i.categories.includes(t)), "", "type", t)).join("") +
-    `<div class="stat info" title="Segments with structured captions / segments indexed"><div class="v">${s.segments_analyzed ?? 0}/${s.segments_indexed ?? 0}</div><div class="k">Clips analyzed</div></div>`;
+    TYPES.map(([t, label]) => card(label, countIf((i) => riskOk(i) && i.categories.includes(t)), "", "type", t)).join("");
   $("stats").querySelectorAll("button[data-dim]").forEach((b) => b.onclick = () => setFilter(b.dataset.dim, b.dataset.val));
   $("stats").querySelector("button[data-reset]").onclick = () => { state.type = "all"; state.risk = "all"; render(); };
 }
@@ -344,7 +360,7 @@ function renderList() {
     return `
     <div class="card ${state.mode === "incident" && state.selected === i.id ? "sel" : ""} ${acked.has(i.id) ? "ack" : ""}" data-id="${i.id}">
       <div class="row">${riskBadge(i.risk, i.events)}<strong>${esc(i.scene)}</strong>
-        <span class="when">${fmtRange(i.start_sec, i.end_sec)} · ${i.flagging_cameras}/${i.views.length} cam${i.views.length > 1 ? "s" : ""}</span></div>
+        <span class="when">${fmtRange(i.start_sec, i.end_sec)}</span></div>
       <div class="sum">${esc(i.summary)}</div>
       <div class="chips">${eventChips(i.events)}${measureChips(top)}${acked.has(i.id) ? `<span class="chip">acknowledged</span>` : ""}</div>
     </div>`;
@@ -355,8 +371,24 @@ function renderList() {
 }
 
 function openIncident(id, cam = 0) {
-  state.mode = "incident"; state.selected = id; state.cam = cam;
+  state.mode = "incident"; state.selected = id; state.cam = cam; state.moreAngles = false;
   render();
+}
+
+function viewLabel(i, v) {
+  return i.moments > 1 ? `${v.camera} · ${fmtSec(v.start_sec)}` : v.camera;
+}
+function angleButtons(i) {
+  if (i.views.length < 2) return "";
+  const btn = (v) => {
+    const n = i.views.indexOf(v);
+    return `<button class="${n === state.cam ? "on" : ""}" data-cam="${n}" title="${v.events.length ? v.events.map((e) => EVENT_LABEL[e]).join(", ") : "Nothing flagged from this camera"}">
+      <span class="dot ${v.events.length ? v.risk : ""}"></span>${esc(viewLabel(i, v))}</button>`;
+  };
+  const flagged = i.views.filter((v) => v.events.length), others = i.views.filter((v) => !v.events.length);
+  const open = state.moreAngles || others.includes(i.views[state.cam]);
+  return `<div class="toolbar">${flagged.map(btn).join("")}
+    ${others.length ? (open ? others.map(btn).join("") : `<button id="moreAngles">+${others.length} more camera${others.length > 1 ? "s" : ""}</button>`) : ""}</div>`;
 }
 
 /* ---------- incident detail ---------- */
@@ -372,22 +404,29 @@ function renderIncident() {
   }
   const v = i.views[state.cam] || i.views[0];
   const isAck = acked.has(i.id);
+  const meta = [
+    i.cameras > 1 ? `Flagged on ${i.flagging_cameras} of ${i.cameras} cameras` : esc(i.views[0].camera),
+    i.moments > 1 ? `${i.moments} back-to-back moments` : "",
+    isAck ? "acknowledged" : "",
+  ].filter(Boolean).join(" · ");
   $("detail").innerHTML = `
     <h2>${riskBadge(i.risk, i.events)} ${esc(i.scene)} · ${fmtRange(i.start_sec, i.end_sec)}</h2>
-    <div class="meta">${esc(i.location)} · flagged by ${i.flagging_cameras} of ${i.views.length} camera angle${i.views.length > 1 ? "s" : ""}${isAck ? " · acknowledged" : ""}</div>
-    ${videoBlock(v.source)}
-    <div class="toolbar">${i.views.length > 1 ? i.views.map((c, n) => `
-      <button class="${n === state.cam ? "on" : ""}" data-cam="${n}" title="${c.events.length ? (c.events.map((e) => EVENT_LABEL[e]).join(", ")) : "No conflict from this angle"}">
-        <span class="dot ${c.events.length ? c.risk : ""}"></span>${esc(c.camera)}</button>`).join("") : ""}
-      <span class="spacer"></span>
-      ${state.ask ? `<button id="backToAsk">Back to search results</button>` : ""}
-      <button id="ack" class="${isAck ? "" : "primary"}">${isAck ? "Reopen incident" : "Acknowledge"}</button>
+    <div class="meta">${meta}</div>
+    <div class="split">
+      <div class="decision">
+        <div class="box"><div class="lbl">What happened</div>${esc(i.summary)}<div class="chips">${eventChips(i.events)}${measureChips(v)}</div></div>
+        ${i.action ? `<div class="box action"><div class="lbl">Suggested action</div>${esc(i.action)}</div>` : ""}
+        <div class="actions">
+          <button id="ack" class="${isAck ? "" : "primary"}">${isAck ? "Reopen incident" : "Acknowledge"}</button>
+          ${state.ask ? `<button id="backToAsk">Back to search results</button>` : ""}
+        </div>
+      </div>
+      <div class="media">${videoBlock(v.source)}${angleButtons(i)}</div>
     </div>
-    <div class="box"><div class="lbl">What happened</div>${esc(i.summary)}<div class="chips">${eventChips(i.events)}</div></div>
-    ${i.action ? `<div class="box action"><div class="lbl">Suggested action</div>${esc(i.action)}</div>` : ""}
     ${evidenceBox(v)}
     ${captionBox(v)}`;
   $("detail").querySelectorAll("button[data-cam]").forEach((b) => b.onclick = () => { state.cam = +b.dataset.cam; renderIncident(); renderList(); });
+  if ($("moreAngles")) $("moreAngles").onclick = () => { state.moreAngles = true; renderIncident(); };
   $("ack").onclick = () => {
     if (!isAck && !state.showAck) selectNextAfter(i.id);
     isAck ? acked.delete(i.id) : acked.add(i.id);
@@ -395,7 +434,7 @@ function renderIncident() {
     render();
   };
   if ($("backToAsk")) $("backToAsk").onclick = () => { state.mode = "ask"; render(); };
-  attachOverlay(v.source, (det) => fillEvidence(v, i.start_sec, det));
+  attachOverlay(v.source, (det) => fillEvidence(v, v.start_sec, det), v.gap_status !== "inconclusive");
 }
 
 function selectNextAfter(id) {
@@ -403,7 +442,7 @@ function selectNextAfter(id) {
   const idx = items.findIndex((x) => x.id === id);
   const next = items[idx + 1] || items[idx - 1];
   state.selected = next && next.id !== id ? next.id : null;
-  state.cam = 0;
+  state.cam = 0; state.moreAngles = false;
 }
 
 /* ---------- search footage ---------- */
@@ -434,21 +473,23 @@ function renderAsk() {
   const match = viewBySource(c.source);
   const view = match ? match.view : { camera: c.camera, events: c.events, risk: c.risk, narrative: c.narrative };
   $("detail").innerHTML = head + `
-    ${videoBlock(c.source)}
-    <div class="toolbar">
-      <span class="row">${riskBadge(view.risk, view.events)}<strong>${esc(c.scene)} · ${esc(c.camera)}</strong><span class="muted">${fmtRange(c.start_sec, c.end_sec)}</span></span>
-      <span class="spacer"></span>
-      ${match ? `<button id="openInc" class="primary">Open incident</button>` : ""}
-      ${back}
+    <div class="split">
+      <div class="decision">
+        <div class="box answer"><div class="lbl">Answer</div>${mdLite(r.answer)}</div>
+        <div class="actions">${match ? `<button id="openInc" class="primary">Open incident</button>` : ""}${back}</div>
+      </div>
+      <div class="media">
+        <div class="row" style="margin-bottom:8px">${riskBadge(view.risk, view.events)}<strong>${esc(c.scene)} · ${esc(c.camera)}</strong><span class="muted">${fmtRange(c.start_sec, c.end_sec)}</span></div>
+        ${videoBlock(c.source)}
+      </div>
     </div>
-    <div class="box answer"><div class="lbl">Answer</div>${mdLite(r.answer)}</div>
     ${evidenceBox(view)}
     ${captionBox(view)}
     <div class="box"><div class="lbl">Matching clips</div><div class="hits">${r.clips.map((h, n) => {
       const m = viewBySource(h.source);
       const hv = m ? m.view : h;
       return `<button class="hit ${n === state.askSel ? "on" : ""}" data-n="${n}">
-        <span class="score">${(h.similarity ?? 0).toFixed(2)}</span>
+        <span class="score" title="How closely this moment matches your search">${Math.round((h.similarity ?? 0) * 100)}%</span>
         <span class="dot ${hv.events && hv.events.length ? hv.risk : ""}" style="margin-top:6px"></span>
         <span><strong>${esc(h.scene)} · ${esc(h.camera)}</strong> <span class="when">${fmtRange(h.start_sec, h.end_sec)}</span>
         <div class="chips" style="margin:2px 0">${eventChips(hv.events)}${measureChips(m && m.view)}</div>
@@ -457,7 +498,7 @@ function renderAsk() {
   $("detail").querySelectorAll(".hit").forEach((b) => b.onclick = () => { state.askSel = +b.dataset.n; renderAsk(); });
   $("backToQueue").onclick = backToQueue;
   if (match) $("openInc").onclick = () => openIncident(match.inc.id, match.cam);
-  attachOverlay(c.source, (det) => fillEvidence(view, c.start_sec, det));
+  attachOverlay(c.source, (det) => fillEvidence(view, c.start_sec, det), view.gap_status !== "inconclusive");
 }
 
 function backToQueue() {
@@ -498,7 +539,7 @@ let lastDetailKey = null;
 function renderDetail(force = false) {
   const key = state.mode === "ask"
     ? `ask|${state.askBusy}|${state.ask && state.ask.question}|${state.askSel}`
-    : `inc|${state.selected}|${state.cam}|${acked.has(state.selected)}|${!!state.ask}`;
+    : `inc|${state.selected}|${state.cam}|${state.moreAngles}|${acked.has(state.selected)}|${!!state.ask}`;
   if (!force && key === lastDetailKey && $("player")) return;
   lastDetailKey = key;
   state.mode === "ask" ? renderAsk() : renderIncident();
@@ -515,7 +556,8 @@ async function load() {
     data = await r.json();
     const when = data.updated ? new Date(data.updated * 1000).toLocaleTimeString() : "not yet";
     const sites = [...new Set(data.incidents.map((i) => siteOf(i.scene)))];
-    $("sub").textContent = `${sites.length ? sites.join(", ") : "Warehouse cameras"} · updated ${when}`;
+    const s = data.stats || {};
+    $("sub").textContent = `${sites.length ? sites.join(", ") : "Warehouse cameras"} · ${s.segments_analyzed ?? 0} of ${s.segments_indexed ?? 0} clips reviewed · updated ${when}`;
     $("warn").hidden = !data.error;
     $("warn").textContent = data.error ? `Last refresh failed: ${data.error}` : "";
     render();

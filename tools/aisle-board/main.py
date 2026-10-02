@@ -130,6 +130,7 @@ def fetch_chunks():
 
 
 SITE_CAM_RE = re.compile(r"Warehouse_(?P<site>\d+)_Camera(?:_(?P<cam>\d+))?_chunk_(?P<chunk>\d+)")
+CAM_KIND = {"ceiling": "Ceiling cam", "eye": "Eye-level cam"}
 
 
 def describe_chunk(c):
@@ -137,14 +138,52 @@ def describe_chunk(c):
     fn = c.get("filename") or ""
     rm = RUN_RE.search(fn)
     if rm:
-        scene = f"Warehouse 3 · run {rm.group('run')}"
-        return scene, rm.group("cam").replace("_", " "), scene, 0.0
+        scene = f"Warehouse 3 · scenario {rm.group('run')}"
+        kind, num = rm.group("cam").split("_")
+        return scene, f"{CAM_KIND.get(kind, kind.title() + ' cam')} {int(num)}", scene, 0.0
     sm = SITE_CAM_RE.search(fn)
     if sm:
-        cam = f"cam {sm.group('cam') or '00'}"
+        cam = f"Camera {int(sm.group('cam') or 0)}"
         offset = int(sm.group("chunk")) * float(c.get("chunk_duration_sec") or 30)
         return f"Warehouse {sm.group('site')} · {cam}", cam, fn, offset
-    return fn.split("_chunk")[0], c.get("camera_id") or "camera", fn, 0.0
+    return fn.split("_chunk")[0], c.get("camera_id") or "Camera", fn, 0.0
+
+
+def gap_status(view):
+    """'measured' when the detector distance is usable, 'inconclusive' when it contradicts the caption."""
+    y = view.get("yolo_gap_m")
+    if y is None:
+        return "none"
+    said = (view.get("gap") or "").lower()
+    close = "under" in said or "less than" in said
+    far = "over" in said
+    if (close and y >= 2) or (far and y < 1):
+        return "inconclusive"
+    return "measured"
+
+
+def merge_consecutive(flagged):
+    """Back-to-back 5 s slices of the same scene and kind of trouble become one incident."""
+    out, last = [], {}
+    for inc in sorted(flagged, key=lambda i: (i["scene"], i["start_sec"] or 0)):
+        prev = last.get(inc["scene"])
+        if prev and (inc["start_sec"] or 0) - (prev["end_sec"] or 0) <= 0.5 and set(prev["categories"]) & set(inc["categories"]):
+            if (RISK_RANK[inc["risk"]], inc["flagging_cameras"]) > (RISK_RANK[prev["risk"]], prev["flagging_cameras"]):
+                prev["summary"] = inc["summary"]
+            prev["end_sec"] = inc["end_sec"]
+            prev["views"] += inc["views"]
+            prev["events"] = sorted(set(prev["events"]) | set(inc["events"]))
+            prev["categories"] = sorted(set(prev["categories"]) | set(inc["categories"]))
+            prev["risk"] = max(prev["risk"], inc["risk"], key=RISK_RANK.get)
+            prev["moments"] += 1
+        else:
+            last[inc["scene"]] = inc
+            out.append(inc)
+    for inc in out:
+        inc["views"].sort(key=lambda v: (-RISK_RANK[v["risk"]], -len(v["events"]), v["start_sec"], v["camera"]))
+        inc["flagging_cameras"] = len({v["camera"] for v in inc["views"] if v["events"]})
+        inc["cameras"] = len({v["camera"] for v in inc["views"]})
+    return out
 
 
 def _percentile(values, q):
@@ -207,6 +246,8 @@ def build_board(chunks, dets=None):
             })
             view = {
                 "camera": cam,
+                "start_sec": start,
+                "end_sec": end,
                 "source": seg.get("source"),
                 "events": p["events"],
                 "risk": p["risk"],
@@ -218,6 +259,7 @@ def build_board(chunks, dets=None):
                 if d["closest"]:
                     view["yolo_gap_m"], view["yolo_t"] = d["closest"]["gap_m"], d["closest"]["t"]
                 view["crowd"], view["crowd_t"], view["people"] = d["crowd"], d["crowd_t"], d["people"]
+            view["gap_status"] = gap_status(view)
             inc["views"].append(view)
 
     mark_crowding(incidents)
@@ -240,16 +282,13 @@ def build_board(chunks, dets=None):
         top = next(v for v in inc["views"] if v["events"])
         inc["summary"] = first_sentences(top["narrative"])
         if top["events"] == ["CROWDING"]:
-            inc["summary"] = (f"A group of {top['crowd']} people bunched within ~{CROWD_GAP_M} m on {top['camera']} "
-                              f"(this camera usually sees groups of {top['crowd_typical']}). " + inc["summary"])
-        gaps = [(v["yolo_gap_m"], v["camera"], v["yolo_t"]) for v in inc["views"]
-                if v["events"] and v.get("yolo_gap_m") is not None]
-        if gaps:
-            g = min(gaps)
-            inc["yolo_gap"] = {"gap_m": g[0], "camera": g[1], "t": g[2]}
+            inc["summary"] = (f"{top['crowd']} people bunched within arm's reach on {top['camera']} "
+                              f"(it usually sees groups of {top['crowd_typical']}). " + inc["summary"])
+        inc["moments"] = 1
         inc["action"] = None
         flagged.append(inc)
 
+    flagged = merge_consecutive(flagged)
     flagged.sort(key=lambda i: (-RISK_RANK[i["risk"]], -i["flagging_cameras"], i["scene"], i["start_sec"] or 0))
     stats = {
         "segments_indexed": views_total,
@@ -411,8 +450,10 @@ def get_detections_or_none(source):
 
 def yolo_facts(v):
     facts = []
-    if v.get("yolo_gap_m") is not None:
+    if v.get("gap_status") == "measured":
         facts.append(f"closest person-vehicle gap ~{v['yolo_gap_m']} m")
+    elif v.get("gap_status") == "inconclusive":
+        facts.append("measured distance contradicts the caption, so treat distance as unknown")
     if "CROWDING" in v["events"]:
         facts.append(f"group of {v['crowd']} people within {CROWD_GAP_M} m (camera typical {v.get('crowd_typical')})")
     return f" [YOLO: {'; '.join(facts)}]" if facts else ""
@@ -425,18 +466,21 @@ def llm_summarize(inc):
     if not (WANDB_API_KEY and WANDB_PROJECT):
         return None
     evidence = "\n".join(
-        f"- {v['camera']} (risk {v['risk'] or 'n/a'}, events {','.join(v['events']) or 'NONE'}): {v['narrative']}{yolo_facts(v)}"
+        f"- {v['camera']} at {int(v['start_sec']) // 60}:{int(v['start_sec']) % 60:02d} "
+        f"(risk {v['risk'] or 'n/a'}, events {','.join(v['events']) or 'NONE'}): {v['narrative']}{yolo_facts(v)}"
         for v in inc["views"][:6])
     key = hashlib.sha1(evidence.encode()).hexdigest()
     if key in _llm_cache:
         return _llm_cache[key]
     prompt = (
-        "One or more warehouse cameras saw the same 5-second moment. Robots and AGVs count as vehicles. Camera notes:\n"
+        "Warehouse cameras recorded one incident (one or more back-to-back 5-second moments). "
+        "Robots and AGVs count as vehicles. Camera notes:\n"
         f"{evidence}\n\n"
         "Reply with JSON only: {\"what_happened\": one plain sentence for a shift lead, "
         "describing who was near, blocking, or crowding whom, \"action\": one short imperative fix "
         "(e.g. add floor marking, slow zone, spotter, stagger breaks)}. Only use facts in the notes; "
-        "YOLO facts are measurements, prefer them over caption guesses.")
+        "YOLO facts are measurements, prefer them over caption guesses. Never mention YOLO, captions, "
+        "detectors or camera names, and only state a distance if the notes agree on it.")
     body = json.dumps({"model": LLM_MODEL, "temperature": 0.2, "max_tokens": 200,
                        "messages": [{"role": "user", "content": prompt}]}).encode()
     req = urllib.request.Request(LLM_URL, data=body, headers={
@@ -474,6 +518,11 @@ class Board:
                 time.sleep(5)
                 with ThreadPoolExecutor(2) as pool:
                     dets.update(zip(missing, pool.map(get_detections_or_none, missing)))
+            failed = sum(d is None for d in dets.values())
+            if self.incidents and failed > 0.2 * len(dets):
+                self.error = f"Video backend busy ({failed} of {len(dets)} clips unreadable); showing the last good board."
+                print("refresh skipped:", self.error, flush=True)
+                return
             incidents, stats, captions = build_board(chunks, dets)
             with self.lock:
                 old = {i["id"]: i for i in self.incidents}
@@ -499,7 +548,8 @@ class Board:
 
     @staticmethod
     def _key(inc):
-        return hashlib.sha1("".join(f"{v['narrative']}{v['events']}{v.get('crowd')}" for v in inc["views"]).encode()).hexdigest()
+        return hashlib.sha1("".join(f"{v['start_sec']}{v['narrative']}{v['events']}{v.get('crowd')}{v.get('gap_status')}"
+                                    for v in inc["views"]).encode()).hexdigest()
 
     def loop(self):
         while True:
