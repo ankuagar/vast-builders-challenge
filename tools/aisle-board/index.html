@@ -6,9 +6,18 @@
 <title>Warehouse Safety Monitor</title>
 <style>
   :root {
+    color-scheme: dark;
     --bg: #0f1216; --panel: #171b21; --panel2: #1e232b; --line: #2a313b;
     --text: #e6e9ee; --muted: #8b95a3; --high: #ff4d4f; --medium: #faad14;
     --low: #52c41a; --accent: #3ea6ff; --group: #b37feb;
+    --chip: #252c36; --chip-text: #c9d1dc; --dot: #444; --on-accent: #001;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f4f6f9; --panel: #ffffff; --panel2: #f0f3f7; --line: #d8dee6;
+    --text: #1a1f27; --muted: #5b6676; --high: #d4380d; --medium: #ad6800;
+    --low: #389e0d; --accent: #1668dc; --group: #7c3aed;
+    --chip: #e8ecf1; --chip-text: #3a4452; --dot: #b8c0cc; --on-accent: #fff;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text);
@@ -24,8 +33,9 @@
   button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
   button:hover:not(:disabled) { border-color: var(--accent); }
   button:disabled { opacity: .55; cursor: default; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #001; font-weight: 600; }
-  button.on { background: var(--accent); border-color: var(--accent); color: #001; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+  button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  #theme { padding: 6px 10px; }
   .warn { color: var(--medium); font-size: 12px; padding: 6px 22px 0; }
 
   .ask { display: flex; gap: 8px; align-items: center; padding: 12px 22px 0; flex-wrap: wrap; }
@@ -65,11 +75,11 @@
   .badge.high { background: rgba(255,77,79,.18); color: var(--high); }
   .badge.medium { background: rgba(250,173,20,.18); color: var(--medium); }
   .badge.low { background: rgba(82,196,26,.18); color: var(--low); }
-  .badge.none { background: #252c36; color: var(--muted); }
+  .badge.none { background: var(--chip); color: var(--muted); }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-  .chip { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #252c36; color: #c9d1dc; }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--chip); color: var(--chip-text); }
   .chip.measure { background: rgba(62,166,255,.15); color: var(--accent); }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #444; flex: none; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dot); flex: none; }
   .dot.high { background: var(--high); } .dot.medium { background: var(--medium); } .dot.low { background: var(--low); }
 
   .detail { padding: 16px; overflow-y: auto; container-type: inline-size; }
@@ -157,7 +167,7 @@
   .report .item { padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
   .report .item:last-child { border-bottom: 0; }
   @media print {
-    .tabs, #refresh, #kbdHint, .ask, #queueView, #insightsView, .noprint, .warn { display: none !important; }
+    .tabs, #refresh, #theme, #kbdHint, .ask, #queueView, #insightsView, .noprint, .warn { display: none !important; }
     body { background: #fff; color: #000; height: auto; display: block; }
     header { border: 0; }
     .page { overflow: visible; }
@@ -165,6 +175,10 @@
     .muted, .sub, .report th { color: #444; }
   }
 </style>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem("theme") ||
+    (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+</script>
 </head>
 <body>
 <header>
@@ -176,6 +190,7 @@
   </nav>
   <span class="sub" id="sub">Loading…</span>
   <span class="muted" id="kbdHint"><kbd>↑</kbd> <kbd>↓</kbd> to move</span>
+  <button id="theme"></button>
   <button id="refresh">Refresh</button>
 </header>
 <div class="warn" id="warn" hidden></div>
@@ -912,6 +927,18 @@ $("refresh").onclick = async () => {
   }, 5000);
 };
 document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => setTab(b.dataset.tab));
+function showThemeButton() {
+  const light = document.documentElement.dataset.theme === "light";
+  $("theme").textContent = light ? "☾" : "☀";
+  $("theme").title = `Switch to ${light ? "dark" : "light"} mode`;
+}
+$("theme").onclick = () => {
+  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("theme", next);
+  showThemeButton();
+};
+showThemeButton();
 load().then(() => { const tab = location.hash.slice(1); if (tab === "insights" || tab === "report") setTab(tab); });
 setInterval(load, 30000);
 </script>
