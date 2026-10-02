@@ -8,74 +8,92 @@
   :root {
     --bg: #0f1216; --panel: #171b21; --panel2: #1e232b; --line: #2a313b;
     --text: #e6e9ee; --muted: #8b95a3; --high: #ff4d4f; --medium: #faad14;
-    --low: #52c41a; --accent: #3ea6ff;
+    --low: #52c41a; --accent: #3ea6ff; --group: #b37feb;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
   header { display: flex; align-items: center; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 18px; letter-spacing: .3px; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  header .spacer { flex: 1; }
+  .sub, .when, .muted { color: var(--muted); font-size: 12px; }
+  header .sub { font-size: 13px; }
+  .spacer { flex: 1; }
   button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
-  button:hover { border-color: var(--accent); }
-  .stats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; padding: 16px 22px; }
-  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-  .stat .v { font-size: 26px; font-weight: 700; }
-  .stat .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
-  .stat.high .v { color: var(--high); } .stat.medium .v { color: var(--medium); }
-  .stat.click { cursor: pointer; } .stat.click:hover { border-color: var(--accent); }
-  .stat.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  main { display: grid; grid-template-columns: 420px 1fr; gap: 16px; padding: 0 22px 22px; height: calc(100vh - 250px); min-height: 520px; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .55; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #001; font-weight: 600; }
+  button.on { background: var(--accent); border-color: var(--accent); color: #001; }
+  .warn { color: var(--medium); font-size: 12px; padding: 6px 22px 0; }
+
   .ask { display: flex; gap: 8px; align-items: center; padding: 14px 22px 0; flex-wrap: wrap; }
   .ask input { flex: 1; min-width: 280px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; }
   .ask input:focus { outline: none; border-color: var(--accent); }
-  .ask button[type=submit] { background: var(--accent); border-color: var(--accent); color: #001; font-weight: 600; padding: 8px 16px; }
   .ask .ex { font-size: 12px; color: var(--muted); background: transparent; border-style: dashed; }
-  .answer { line-height: 1.55; }
-  .answer ul { margin: 6px 0; padding-left: 20px; }
-  .hits { display: flex; flex-direction: column; gap: 6px; }
-  .hit { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 8px 10px; }
-  .hit.on { border-color: var(--accent); }
-  .hit .score { font-variant-numeric: tabular-nums; color: var(--accent); min-width: 42px; }
-  .hit .txt { color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .queue { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
-  .filters { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .filters button.on { background: var(--accent); border-color: var(--accent); color: #001; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; padding: 14px 22px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; text-align: left; }
+  .stat .v { font-size: 24px; font-weight: 700; }
+  .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .stat.high .v { color: var(--high); } .stat.medium .v { color: var(--medium); } .stat.low .v { color: var(--low); }
+  button.stat:hover { border-color: var(--accent); }
+  button.stat.on { background: var(--panel); color: var(--text); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .stat.info { border-style: dashed; }
+
+  main { display: grid; grid-template-columns: 440px 1fr; gap: 16px; padding: 0 22px 22px; height: calc(100vh - 252px); min-height: 520px; }
+  .queue, .detail { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .queue { display: flex; flex-direction: column; overflow: hidden; }
+  .filters { padding: 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+  .fgroup { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .fgroup .flabel { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; width: 38px; }
+  .fgroup button { font-size: 12px; padding: 4px 10px; }
+  .fstatus { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+  .fstatus label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text); }
+  .fstatus button { font-size: 12px; padding: 2px 8px; }
   .list { overflow-y: auto; flex: 1; }
   .card { padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; border-left: 4px solid transparent; }
   .card:hover { background: var(--panel2); }
   .card.sel { background: var(--panel2); border-left-color: var(--accent); }
   .card.ack { opacity: .45; }
-  .card .top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-  .card .when { color: var(--muted); font-size: 12px; margin-left: auto; }
-  .card .sum { color: var(--text); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .4px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row .when { margin-left: auto; }
+  .card .sum { font-size: 13px; margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
   .badge.high { background: rgba(255,77,79,.18); color: var(--high); }
   .badge.medium { background: rgba(250,173,20,.18); color: var(--medium); }
   .badge.low { background: rgba(82,196,26,.18); color: var(--low); }
-  .chip { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #252c36; color: #c9d1dc; }
+  .badge.none { background: #252c36; color: var(--muted); }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-  .detail { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-y: auto; }
-  .detail h2 { margin: 0 0 4px; font-size: 18px; }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #252c36; color: #c9d1dc; }
+  .chip.measure { background: rgba(62,166,255,.15); color: var(--accent); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #444; flex: none; }
+  .dot.high { background: var(--high); } .dot.medium { background: var(--medium); } .dot.low { background: var(--low); }
+
+  .detail { padding: 16px; overflow-y: auto; }
+  .detail h2 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
   .detail .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
-  video { width: 100%; max-height: 52vh; background: #000; border-radius: 8px; display: block; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 14px; }
+  .toolbar button { font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .toolbar button.on { background: var(--panel2); color: var(--accent); border-color: var(--accent); }
+  video { width: 100%; max-height: 50vh; background: #000; border-radius: 8px; display: block; }
   .vwrap { position: relative; }
   .vwrap canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
-  .ovl { display: flex; align-items: center; gap: 10px; margin-top: 6px; color: var(--muted); font-size: 12px; }
-  .ovl label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text); }
-  .gapv { font-size: 22px; font-weight: 700; }
-  .gapv.close { color: var(--high); } .gapv.mid { color: var(--medium); } .gapv.far { color: var(--low); }
-  .chip.yolo { background: rgba(62,166,255,.15); color: var(--accent); }
-  .cams { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 14px; }
-  .cams button { font-size: 12px; }
-  .cams button.on { border-color: var(--accent); color: var(--accent); }
-  .cams button .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #444; }
-  .cams button .dot.high { background: var(--high); } .cams button .dot.medium { background: var(--medium); } .cams button .dot.low { background: var(--low); }
+  .ovl { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .ovl label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; }
   .box { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
-  .box .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
-  .action { border-color: rgba(62,166,255,.4); }
+  .box .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  .box.action { border-color: rgba(62,166,255,.4); }
+  .measure-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .measure-row button { font-size: 12px; padding: 2px 8px; }
+  .big { font-size: 20px; font-weight: 700; }
+  .big.close { color: var(--high); } .big.mid { color: var(--medium); } .big.far { color: var(--low); } .big.group { color: var(--group); }
+  .answer { line-height: 1.55; } .answer ul { margin: 6px 0; padding-left: 20px; }
+  .hits { display: flex; flex-direction: column; gap: 6px; }
+  .hit { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 8px 10px; }
+  .hit.on { border-color: var(--accent); }
+  .hit .score { font-variant-numeric: tabular-nums; color: var(--accent); min-width: 38px; }
+  .hit .txt { color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .empty { color: var(--muted); padding: 40px; text-align: center; }
-  .warn { color: var(--medium); font-size: 12px; padding: 6px 22px 0; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 </style>
 </head>
 <body>
@@ -83,13 +101,13 @@
   <h1>Aisle Conflict Board</h1>
   <span class="sub" id="sub">Loading…</span>
   <span class="spacer"></span>
-  <button id="showAck">Show acknowledged</button>
+  <span class="muted"><kbd>↑</kbd> <kbd>↓</kbd> move through the queue</span>
   <button id="refresh">Refresh</button>
 </header>
 <div class="warn" id="warn" hidden></div>
 <form class="ask" id="askForm">
   <input id="askInput" maxlength="300" placeholder="Ask the floor, e.g. &quot;person walking behind a reversing forklift&quot;" autocomplete="off">
-  <button type="submit" id="askBtn">Ask the floor</button>
+  <button type="submit" class="primary" id="askBtn">Ask the floor</button>
   <button type="button" class="ex">person walking behind a reversing forklift</button>
   <button type="button" class="ex">worker without a hard hat near a forklift</button>
   <button type="button" class="ex">robot waiting for a pallet jack to pass</button>
@@ -110,25 +128,103 @@ const EVENT_LABEL = {
   VEHICLE_CONFLICT: "Vehicles blocking each other", BLOCKED_AISLE: "Blocked aisle",
   PALLET_IN_WALKWAY: "Pallet in walkway", CROWDING: "Unusual crowding",
 };
-const FILTERS = [
-  ["all", "All"], ["near_miss", "Near misses"], ["blocked", "Blocked aisles"], ["crowding", "Crowding"],
-  ["high", "High risk"], ["medium", "Medium risk"],
-];
-const RISK_FILTERS = new Set(["high", "medium", "low"]);
-let data = { incidents: [], stats: {} };
-let filter = "all", site = "all", selected = null, selectedCam = 0, showAck = false;
-let mode = "incident", askResult = null, askSel = 0, askBusy = false;
-let showBoxes = localStorage.getItem("aisle-boxes") !== "off", overlayRun = 0;
-const detCache = {};
+const TYPES = [["near_miss", "Near misses"], ["blocked", "Blocked aisles"], ["crowding", "Crowding"]];
+const RISKS = [["high", "High risk"], ["medium", "Medium risk"], ["low", "Low risk"]];
 
+const state = {
+  type: "all", risk: "all", site: "all",
+  showAck: false, selected: null, cam: 0,
+  mode: "incident", ask: null, askSel: 0, askBusy: false,
+  showBoxes: localStorage.getItem("aisle-boxes") !== "off",
+};
+let data = { incidents: [], stats: {} };
+let overlayRun = 0;
+const detCache = {};
+const acked = new Set(JSON.parse(localStorage.getItem("aisle-acked") || "[]"));
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtSec = (s) => { const t = Math.round(s || 0); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
+const fmtRange = (a, b) => `${fmtSec(a)}–${fmtSec(b)}`;
 const fmtGap = (g) => g == null ? "n/a" : g <= 0.1 ? "touching" : `≈ ${g.toFixed(1)} m`;
 const gapClass = (g) => g == null ? "" : g < 1 ? "close" : g < 3 ? "mid" : "far";
+const siteOf = (scene) => (scene || "").split(" · ")[0];
+const clipUrl = (src) => `${BASE}clip?source=${encodeURIComponent(src)}`;
+const saveAcked = () => localStorage.setItem("aisle-acked", JSON.stringify([...acked]));
 
-function videoBlock(source) {
-  return `<div class="vwrap"><video id="player" src="${clipUrl(source)}" controls autoplay muted loop playsinline></video><canvas id="overlay"></canvas></div>
-    <div class="ovl"><label><input type="checkbox" id="boxesToggle" ${showBoxes ? "checked" : ""}> YOLO boxes + closest gap</label><span id="ovlNote"></span></div>`;
+/* ---------- filtering: one rule set for cards, chips and the list ---------- */
+const inScope = (i) => (state.showAck || !acked.has(i.id)) && (state.site === "all" || siteOf(i.scene) === state.site);
+const typeOk = (i, t = state.type) => t === "all" || i.categories.includes(t);
+const riskOk = (i, r = state.risk) => r === "all" || i.risk === r;
+const visible = () => data.incidents.filter((i) => inScope(i) && typeOk(i) && riskOk(i));
+const countIf = (pred) => data.incidents.filter((i) => inScope(i) && pred(i)).length;
+
+function setFilter(dim, value) {
+  state[dim] = state[dim] === value ? "all" : value;
+  render();
 }
 
+/* ---------- shared components ---------- */
+function riskBadge(risk, events) {
+  return events && events.length ? `<span class="badge ${risk || "low"}">${risk || "low"}</span>` : `<span class="badge none">no conflict</span>`;
+}
+function eventChips(events) {
+  return (events || []).map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("");
+}
+function measureChips(view) {
+  if (!view) return "";
+  let html = "";
+  if (view.events && view.events.length && view.yolo_gap_m != null) html += `<span class="chip measure">gap ${fmtGap(view.yolo_gap_m)}</span>`;
+  if (view.events && view.events.includes("CROWDING")) html += `<span class="chip measure">group of ${view.crowd} (usual ${view.crowd_typical})</span>`;
+  return html;
+}
+function viewBySource(source) {
+  for (const inc of data.incidents) {
+    const v = inc.views.find((x) => x.source === source);
+    if (v) return { inc, view: v, cam: inc.views.indexOf(v) };
+  }
+  return null;
+}
+function videoBlock(source) {
+  return `<div class="vwrap"><video id="player" src="${clipUrl(source)}" controls autoplay muted loop playsinline></video><canvas id="overlay"></canvas></div>
+    <div class="ovl"><label><input type="checkbox" id="boxesToggle" ${state.showBoxes ? "checked" : ""}> YOLO boxes, gap and groups</label><span class="muted" id="ovlNote"></span></div>`;
+}
+function seekPlayer(t) { const p = $("player"); if (p) { p.pause(); p.currentTime = Math.max(0, t || 0); } }
+
+function evidenceBox(view, clipStart) {
+  return `<div class="box" id="evidence"><div class="lbl">Measured evidence · ${esc(view.camera)}</div><span class="muted">Measuring…</span></div>`;
+}
+function fillEvidence(view, clipStart, det) {
+  const box = $("evidence");
+  if (!box) return;
+  const said = view.gap ? `Cosmos caption says <strong>${esc(view.gap)}</strong>.` : "Cosmos caption gives no distance.";
+  let html = `<div class="lbl">Measured evidence · ${esc(view.camera)}</div>`;
+  if (!det) {
+    html += `<span class="muted">No YOLO detections for this clip. ${said}</span>`;
+  } else {
+    const c = det.closest;
+    html += c
+      ? `<div class="measure-row"><span class="big ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span>
+           <span class="muted">closest person–vehicle gap at ${fmtSec(clipStart + c.t)}${c.held ? " (vehicle box held from an earlier frame)" : ""}</span>
+           <button data-seek="${c.t}">Jump to moment</button></div>`
+      : `<div class="measure-row"><span class="muted">No vehicle seen near a person from this angle.</span></div>`;
+    if (view.events && view.events.includes("CROWDING")) {
+      html += `<div class="measure-row"><span class="big group">group of ${det.crowd}</span>
+           <span class="muted">people within ~0.5 m for 1s+, vs. usual ${view.crowd_typical} on this camera · ${det.people} in frame</span>
+           ${det.crowd_t != null ? `<button data-seek="${det.crowd_t}">Jump to group</button>` : ""}</div>`;
+    }
+    html += `<div class="muted">${said} Distances are 2D image estimates scaled by person height (~1.7 m).</div>`;
+  }
+  box.innerHTML = html;
+  box.querySelectorAll("button[data-seek]").forEach((b) => b.onclick = () => seekPlayer(+b.dataset.seek));
+}
+function captionBox(view) {
+  return `<div class="box"><div class="lbl">Cosmos caption · ${esc(view.camera)}</div>
+    <div class="row" style="margin-bottom:8px">${riskBadge(view.risk, view.events)}<div class="chips" style="margin:0">${eventChips(view.events)}</div></div>
+    ${esc(view.narrative || "No caption available.")}</div>`;
+}
+
+/* ---------- overlay ---------- */
 async function loadDetections(source) {
   if (!detCache[source]) {
     detCache[source] = fetch(`${BASE}api/detections?source=${encodeURIComponent(source)}`)
@@ -136,11 +232,10 @@ async function loadDetections(source) {
   }
   return detCache[source];
 }
-
 async function attachOverlay(source, onInfo) {
   const run = ++overlayRun;
   const toggle = $("boxesToggle");
-  if (toggle) toggle.onchange = () => { showBoxes = toggle.checked; localStorage.setItem("aisle-boxes", showBoxes ? "on" : "off"); };
+  if (toggle) toggle.onchange = () => { state.showBoxes = toggle.checked; localStorage.setItem("aisle-boxes", state.showBoxes ? "on" : "off"); };
   const det = await loadDetections(source);
   if (run !== overlayRun) return;
   if (onInfo) onInfo(det);
@@ -156,7 +251,7 @@ async function attachOverlay(source, onInfo) {
     if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, cw, ch);
-    if (showBoxes && det.frames.length) {
+    if (state.showBoxes && det.frames.length) {
       const vw = video.videoWidth || sw, vh = video.videoHeight || sh;
       const scale = Math.min(cw / vw, ch / vh), dw = vw * scale, dh = vh * scale;
       const ox = (cw - dw) / 2, oy = (ch - dh) / 2, kx = dw / sw, ky = dh / sh;
@@ -196,76 +291,125 @@ async function attachOverlay(source, onInfo) {
   };
   requestAnimationFrame(draw);
 }
-const acked = new Set(JSON.parse(localStorage.getItem("aisle-acked") || "[]"));
 
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const fmtSec = (s) => { const t = Math.round(s || 0); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
-const siteOf = (i) => i.scene.split(" · ")[0];
-const crowdChip = (i) => {
-  const v = i.views.find((x) => x.events.includes("CROWDING"));
-  return v ? `<span class="chip yolo">group of ${v.crowd} (usual ${v.crowd_typical})</span>` : "";
-};
-const clipUrl = (src) => `${BASE}clip?source=${encodeURIComponent(src)}`;
-
-function visible() {
-  return data.incidents.filter((i) => {
-    if (!showAck && acked.has(i.id)) return false;
-    if (site !== "all" && siteOf(i) !== site) return false;
-    if (RISK_FILTERS.has(filter)) return i.risk === filter;
-    if (filter === "all") return true;
-    return i.categories.includes(filter);
-  });
-}
-
+/* ---------- summary cards (each card = what you'd see after clicking it) ---------- */
 function renderStats() {
   const s = data.stats || {};
-  const open = data.incidents.filter((i) => !acked.has(i.id)).length;
-  const cards = [
-    ["Open incidents", open, "", "all"], ["High risk", s.high ?? 0, "high", "high"], ["Medium risk", s.medium ?? 0, "medium", "medium"],
-    ["Near misses", s.near_miss ?? 0, "", "near_miss"], ["Blocked aisles", s.blocked ?? 0, "", "blocked"],
-    ["Crowding", s.crowding ?? 0, "", "crowding"],
-    ["Clips analyzed", `${s.segments_analyzed ?? 0}/${s.segments_indexed ?? 0}`, "", null],
-  ];
-  $("stats").innerHTML = cards.map(([k, v, c, f]) =>
-    `<div class="stat ${c} ${f ? "click" : ""} ${f && f === filter ? "on" : ""}" ${f ? `data-f="${f}" title="Show ${k.toLowerCase()}"` : ""}>
-       <div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
-  $("stats").querySelectorAll(".stat[data-f]").forEach((el) => el.onclick = () => { filter = el.dataset.f; render(); });
+  const card = (label, value, cls, dim, val) => {
+    const on = dim && state[dim] === val;
+    return `<button class="stat ${cls} ${on ? "on" : ""}" data-dim="${dim}" data-val="${val}" title="${on ? "Clear this filter" : `Show ${label.toLowerCase()}`}">
+      <div class="v">${value}</div><div class="k">${label}</div></button>`;
+  };
+  const scopeLabel = state.showAck ? "All incidents" : "Open incidents";
+  $("stats").innerHTML =
+    `<button class="stat ${state.type === "all" && state.risk === "all" ? "on" : ""}" data-reset="1" title="Clear type and risk filters">
+       <div class="v">${countIf(() => true)}</div><div class="k">${scopeLabel}</div></button>` +
+    RISKS.map(([r, label]) => card(label, countIf((i) => typeOk(i) && i.risk === r), r, "risk", r)).join("") +
+    TYPES.map(([t, label]) => card(label, countIf((i) => riskOk(i) && i.categories.includes(t)), "", "type", t)).join("") +
+    `<div class="stat info" title="Segments with structured captions / segments indexed"><div class="v">${s.segments_analyzed ?? 0}/${s.segments_indexed ?? 0}</div><div class="k">Clips analyzed</div></div>`;
+  $("stats").querySelectorAll("button[data-dim]").forEach((b) => b.onclick = () => setFilter(b.dataset.dim, b.dataset.val));
+  $("stats").querySelector("button[data-reset]").onclick = () => { state.type = "all"; state.risk = "all"; render(); };
 }
 
+/* ---------- queue filters ---------- */
 function renderFilters() {
-  const sites = [...new Set(data.incidents.map(siteOf))].sort();
-  const siteBtns = sites.length > 1
-    ? `<span style="flex-basis:100%;height:0"></span>` + [["all", "All sites"], ...sites.map((s) => [s, s])].map(([id, label]) =>
-        `<button class="${site === id ? "on" : ""}" data-s="${esc(id)}">${esc(label)}</button>`).join("")
-    : "";
-  $("filters").innerHTML = FILTERS.map(([id, label]) =>
-    `<button class="${filter === id ? "on" : ""}" data-f="${id}">${label}</button>`).join("") + siteBtns;
-  $("filters").querySelectorAll("button[data-f]").forEach((b) => b.onclick = () => { filter = b.dataset.f; render(); });
-  $("filters").querySelectorAll("button[data-s]").forEach((b) => b.onclick = () => { site = b.dataset.s; render(); });
+  const sites = [...new Set(data.incidents.map((i) => siteOf(i.scene)))].sort();
+  const group = (label, dim, options, allLabel) => `<div class="fgroup"><span class="flabel">${label}</span>` +
+    [["all", allLabel], ...options].map(([v, l]) => `<button class="${state[dim] === v ? "on" : ""}" data-dim="${dim}" data-val="${esc(v)}">${esc(l)}</button>`).join("") + `</div>`;
+  const shown = visible().length, total = data.incidents.length;
+  const filtered = state.type !== "all" || state.risk !== "all" || state.site !== "all";
+  $("filters").innerHTML =
+    group("Type", "type", TYPES, "All types") +
+    group("Risk", "risk", RISKS.map(([v, l]) => [v, l.replace(" risk", "")]), "Any") +
+    (sites.length > 1 ? group("Site", "site", sites.map((s) => [s, s]), "All sites") : "") +
+    `<div class="fstatus"><span>Showing ${shown} of ${total}</span>
+       <label><input type="checkbox" id="ackToggle" ${state.showAck ? "checked" : ""}> Include acknowledged (${acked.size})</label>
+       <span class="spacer"></span>${filtered ? `<button id="clearFilters">Clear filters</button>` : ""}</div>`;
+  $("filters").querySelectorAll("button[data-dim]").forEach((b) => b.onclick = () => {
+    state[b.dataset.dim] = b.dataset.val; render();
+  });
+  $("ackToggle").onchange = (e) => { state.showAck = e.target.checked; render(); };
+  if ($("clearFilters")) $("clearFilters").onclick = () => { state.type = state.risk = state.site = "all"; render(); };
 }
 
+/* ---------- queue ---------- */
 function renderList() {
   const items = visible();
   if (!items.length) {
-    $("list").innerHTML = `<div class="empty">${data.incidents.length ? "Nothing matches this filter." : "No conflicts flagged yet. Clips still being analyzed will appear here."}</div>`;
+    $("list").innerHTML = `<div class="empty">${data.incidents.length ? "No incidents match these filters." : "No incidents flagged yet. Clips still being analyzed will appear here."}</div>`;
     return;
   }
-  $("list").innerHTML = items.map((i) => `
-    <div class="card ${selected === i.id ? "sel" : ""} ${acked.has(i.id) ? "ack" : ""}" data-id="${i.id}">
-      <div class="top">
-        <span class="badge ${i.risk}">${i.risk}</span>
-        <strong>${esc(i.scene)}</strong>
-        <span class="when">${fmtSec(i.start_sec)}–${fmtSec(i.end_sec)} · ${i.flagging_cameras}/${i.views.length} cams</span>
-      </div>
+  $("list").innerHTML = items.map((i) => {
+    const top = i.views.find((v) => v.events.length) || i.views[0];
+    return `
+    <div class="card ${state.mode === "incident" && state.selected === i.id ? "sel" : ""} ${acked.has(i.id) ? "ack" : ""}" data-id="${i.id}">
+      <div class="row">${riskBadge(i.risk, i.events)}<strong>${esc(i.scene)}</strong>
+        <span class="when">${fmtRange(i.start_sec, i.end_sec)} · ${i.flagging_cameras}/${i.views.length} cam${i.views.length > 1 ? "s" : ""}</span></div>
       <div class="sum">${esc(i.summary)}</div>
-      <div class="chips">${i.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("")}${i.yolo_gap ? `<span class="chip yolo">YOLO gap ${fmtGap(i.yolo_gap.gap_m)}</span>` : ""}${crowdChip(i)}</div>
-    </div>`).join("");
-  $("list").querySelectorAll(".card").forEach((c) => c.onclick = () => { selected = c.dataset.id; selectedCam = 0; mode = "incident"; render(); });
+      <div class="chips">${eventChips(i.events)}${measureChips(top)}${acked.has(i.id) ? `<span class="chip">acknowledged</span>` : ""}</div>
+    </div>`;
+  }).join("");
+  $("list").querySelectorAll(".card").forEach((c) => c.onclick = () => openIncident(c.dataset.id));
+  const sel = $("list").querySelector(".card.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
 }
 
+function openIncident(id, cam = 0) {
+  state.mode = "incident"; state.selected = id; state.cam = cam;
+  render();
+}
+
+/* ---------- incident detail ---------- */
+function renderIncident() {
+  const i = data.incidents.find((x) => x.id === state.selected);
+  if (!i) {
+    const none = data && data.incidents.length && !visible().length;
+    $("detail").innerHTML = none
+      ? `<div class="empty">No incidents match these filters.<div style="margin-top:10px"><button id="clearFiltersDetail">Clear filters</button></div></div>`
+      : `<div class="empty">Select an incident to review the clip.</div>`;
+    if ($("clearFiltersDetail")) $("clearFiltersDetail").onclick = () => { state.type = state.risk = state.site = "all"; render(); };
+    return;
+  }
+  const v = i.views[state.cam] || i.views[0];
+  const isAck = acked.has(i.id);
+  $("detail").innerHTML = `
+    <h2>${riskBadge(i.risk, i.events)} ${esc(i.scene)} · ${fmtRange(i.start_sec, i.end_sec)}</h2>
+    <div class="meta">${esc(i.location)} · flagged by ${i.flagging_cameras} of ${i.views.length} camera angle${i.views.length > 1 ? "s" : ""}${isAck ? " · acknowledged" : ""}</div>
+    ${videoBlock(v.source)}
+    <div class="toolbar">${i.views.length > 1 ? i.views.map((c, n) => `
+      <button class="${n === state.cam ? "on" : ""}" data-cam="${n}" title="${c.events.length ? (c.events.map((e) => EVENT_LABEL[e]).join(", ")) : "No conflict from this angle"}">
+        <span class="dot ${c.events.length ? c.risk : ""}"></span>${esc(c.camera)}</button>`).join("") : ""}
+      <span class="spacer"></span>
+      ${state.ask ? `<button id="backToAsk">Back to search results</button>` : ""}
+      <button id="ack" class="${isAck ? "" : "primary"}">${isAck ? "Reopen incident" : "Acknowledge"}</button>
+    </div>
+    <div class="box"><div class="lbl">What happened</div>${esc(i.summary)}<div class="chips">${eventChips(i.events)}</div></div>
+    ${i.action ? `<div class="box action"><div class="lbl">Suggested action</div>${esc(i.action)}</div>` : ""}
+    ${evidenceBox(v)}
+    ${captionBox(v)}`;
+  $("detail").querySelectorAll("button[data-cam]").forEach((b) => b.onclick = () => { state.cam = +b.dataset.cam; renderIncident(); renderList(); });
+  $("ack").onclick = () => {
+    if (!isAck && !state.showAck) selectNextAfter(i.id);
+    isAck ? acked.delete(i.id) : acked.add(i.id);
+    saveAcked();
+    render();
+  };
+  if ($("backToAsk")) $("backToAsk").onclick = () => { state.mode = "ask"; render(); };
+  attachOverlay(v.source, (det) => fillEvidence(v, i.start_sec, det));
+}
+
+function selectNextAfter(id) {
+  const items = visible();
+  const idx = items.findIndex((x) => x.id === id);
+  const next = items[idx + 1] || items[idx - 1];
+  state.selected = next && next.id !== id ? next.id : null;
+  state.cam = 0;
+}
+
+/* ---------- ask the floor ---------- */
 function mdLite(text) {
-  const lines = esc(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").split("\n");
+  const body = (text || "").replace(/^\s*#*\s*(\*\*)?answer:?(\*\*)?:?\s*\n/i, "").replace(/^#+\s*(.*)$/gm, "**$1**");
+  const lines = esc(body).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").split("\n");
   let html = "", inList = false;
   for (const line of lines) {
     const m = line.match(/^\s*[-*]\s+(.*)/);
@@ -277,116 +421,125 @@ function mdLite(text) {
 }
 
 function renderAsk() {
-  if (askBusy) { $("detail").innerHTML = `<div class="empty">Searching the warehouse cameras for “${esc($("askInput").value)}”…</div>`; return; }
-  const r = askResult;
-  if (r.error) { $("detail").innerHTML = `<div class="empty">Search failed: ${esc(r.error)}</div>`; return; }
-  if (!r.clips.length) { $("detail").innerHTML = `<h2>Ask the floor</h2><div class="meta">“${esc(r.question)}”</div><div class="empty">No matching moments. Try different wording.</div>`; return; }
-  const c = r.clips[askSel] || r.clips[0];
-  $("detail").innerHTML = `
-    <h2>Ask the floor</h2>
-    <div class="meta">“${esc(r.question)}” · ${r.clips.length} matching moments from hybrid search</div>
+  const back = `<button id="backToQueue">Back to incidents</button>`;
+  if (state.askBusy) { $("detail").innerHTML = `<div class="empty">Searching the warehouse cameras for “${esc($("askInput").value)}”…</div>`; return; }
+  const r = state.ask;
+  const head = `<h2>Ask the floor</h2><div class="meta">“${esc(r.question)}”${r.clips ? ` · ${r.clips.length} matching moment${r.clips.length === 1 ? "" : "s"} from hybrid search` : ""}</div>`;
+  if (r.error || !r.clips.length) {
+    $("detail").innerHTML = head + `<div class="empty">${r.error ? `Search failed: ${esc(r.error)}` : "No matching moments. Try different wording."}</div><div class="toolbar">${back}</div>`;
+    $("backToQueue").onclick = backToQueue;
+    return;
+  }
+  const c = r.clips[state.askSel] || r.clips[0];
+  const match = viewBySource(c.source);
+  const view = match ? match.view : { camera: c.camera, events: c.events, risk: c.risk, narrative: c.narrative };
+  $("detail").innerHTML = head + `
     ${videoBlock(c.source)}
-    <div class="meta" style="margin-top:8px">${esc(c.scene)} · ${esc(c.camera)} · ${fmtSec(c.start_sec)}–${fmtSec(c.end_sec)}${c.risk ? ` · <span class="badge ${c.risk}">${c.risk}</span>` : ""}
-      ${c.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join(" ")}</div>
+    <div class="toolbar">
+      <span class="row">${riskBadge(view.risk, view.events)}<strong>${esc(c.scene)} · ${esc(c.camera)}</strong><span class="muted">${fmtRange(c.start_sec, c.end_sec)}</span></span>
+      <span class="spacer"></span>
+      ${match ? `<button id="openInc" class="primary">Open incident</button>` : ""}
+      ${back}
+    </div>
     <div class="box answer"><div class="lbl">Answer</div>${mdLite(r.answer)}</div>
-    <div class="box"><div class="lbl">Matching clips</div><div class="hits">${r.clips.map((h, n) => `
-      <button class="hit ${n === askSel ? "on" : ""}" data-n="${n}">
+    ${evidenceBox(view)}
+    ${captionBox(view)}
+    <div class="box"><div class="lbl">Matching clips</div><div class="hits">${r.clips.map((h, n) => {
+      const m = viewBySource(h.source);
+      const hv = m ? m.view : h;
+      return `<button class="hit ${n === state.askSel ? "on" : ""}" data-n="${n}">
         <span class="score">${(h.similarity ?? 0).toFixed(2)}</span>
-        <span><strong>${esc(h.scene)} · ${esc(h.camera)}</strong> <span class="when">${fmtSec(h.start_sec)}–${fmtSec(h.end_sec)}</span>
-        <div class="txt">${esc(h.narrative || "")}</div></span>
-      </button>`).join("")}</div></div>`;
-  $("detail").querySelectorAll(".hit").forEach((b) => b.onclick = () => { askSel = +b.dataset.n; renderAsk(); });
-  attachOverlay(c.source);
+        <span class="dot ${hv.events && hv.events.length ? hv.risk : ""}" style="margin-top:6px"></span>
+        <span><strong>${esc(h.scene)} · ${esc(h.camera)}</strong> <span class="when">${fmtRange(h.start_sec, h.end_sec)}</span>
+        <div class="chips" style="margin:2px 0">${eventChips(hv.events)}${measureChips(m && m.view)}</div>
+        <div class="txt">${esc(h.narrative || "")}</div></span></button>`;
+    }).join("")}</div></div>`;
+  $("detail").querySelectorAll(".hit").forEach((b) => b.onclick = () => { state.askSel = +b.dataset.n; renderAsk(); });
+  $("backToQueue").onclick = backToQueue;
+  if (match) $("openInc").onclick = () => openIncident(match.inc.id, match.cam);
+  attachOverlay(c.source, (det) => fillEvidence(view, c.start_sec, det));
+}
+
+function backToQueue() {
+  state.mode = "incident";
+  render();
 }
 
 async function ask(question) {
   question = question.trim();
-  if (!question || askBusy) return;
+  if (!question || state.askBusy) return;
   $("askInput").value = question;
-  mode = "ask"; askBusy = true; askSel = 0; selected = null;
+  state.mode = "ask"; state.askBusy = true; state.askSel = 0;
   $("askBtn").disabled = true;
-  renderList(); renderAsk();
+  render();
   try {
     const r = await fetch(`${BASE}api/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
     const body = await r.json();
-    askResult = r.ok ? body : { question, error: body.error || `HTTP ${r.status}` };
+    state.ask = r.ok ? body : { question, error: body.error || `HTTP ${r.status}`, clips: [] };
   } catch (e) {
-    askResult = { question, error: String(e) };
+    state.ask = { question, error: String(e), clips: [] };
   }
-  askBusy = false;
+  state.askBusy = false;
   $("askBtn").disabled = false;
-  if (mode === "ask") renderAsk();
+  if (state.mode === "ask") render();
 }
 
-function renderDetail() {
-  if (mode === "ask") return renderAsk();
-  const i = data.incidents.find((x) => x.id === selected);
-  if (!i) { $("detail").innerHTML = `<div class="empty">Select an incident to review the clip.</div>`; return; }
-  const v = i.views[selectedCam] || i.views[0];
-  $("detail").innerHTML = `
-    <h2><span class="badge ${i.risk}">${i.risk}</span> ${esc(i.scene)} · ${fmtSec(i.start_sec)}–${fmtSec(i.end_sec)}</h2>
-    <div class="meta">${esc(i.location)} · ${esc(i.camera_id)} · flagged by ${i.flagging_cameras} of ${i.views.length} camera angles</div>
-    ${videoBlock(v.source)}
-    <div class="cams">${i.views.map((c, n) => `
-      <button class="${n === selectedCam ? "on" : ""}" data-n="${n}"><span class="dot ${c.events.length ? c.risk : ""}"></span>${esc(c.camera)}</button>`).join("")}
-    </div>
-    <div class="box"><div class="lbl">What happened</div>${esc(i.summary)}</div>
-    ${i.action ? `<div class="box action"><div class="lbl">Suggested action</div>${esc(i.action)}</div>` : ""}
-    <div class="box" id="gapBox"><div class="lbl">Closest person–vehicle gap · ${esc(v.camera)}</div><span class="when">Measuring…</span></div>
-    <div class="box">
-      <div class="lbl">${esc(v.camera)} · risk ${esc(v.risk || "n/a")}${v.gap ? ` · closest gap ${esc(v.gap)}` : ""}</div>
-      <div class="chips" style="margin:0 0 8px">${v.events.length ? v.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("") : `<span class="chip">No conflict from this angle</span>`}</div>
-      ${esc(v.narrative)}
-    </div>
-    <button id="ack">${acked.has(i.id) ? "Reopen incident" : "Acknowledge"}</button>`;
-  $("detail").querySelectorAll(".cams button").forEach((b) => b.onclick = () => { selectedCam = +b.dataset.n; renderDetail(); });
-  attachOverlay(v.source, (det) => {
-    const box = $("gapBox");
-    if (!box) return;
-    const c = det && det.closest;
-    const said = v.gap ? `Cosmos caption says <strong>${esc(v.gap)}</strong>.` : "Cosmos caption gives no distance.";
-    box.innerHTML = `<div class="lbl">Closest person–vehicle gap · ${esc(v.camera)}</div>` + (c
-      ? `<span class="gapv ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span> <span class="when">YOLO at ${fmtSec(c.t)} into the clip${c.held ? " (vehicle box held from an earlier frame)" : ""}</span>
-         <button id="jump" style="margin-left:8px">Jump to moment</button>
-         <div class="when" style="margin-top:6px">${said} Estimate = 2D box distance scaled by the person's height (~1.7 m).</div>`
-      : `<span class="when">YOLO saw no vehicle near a person from this angle. ${said}</span>`)
-      + (det && v.events.includes("CROWDING")
-        ? `<div style="margin-top:10px"><span class="gapv mid">group of ${det.crowd}</span>
-             <span class="when">people within ~0.5 m for 1s+, vs. usual ${v.crowd_typical} on this camera · ${det.people} people in frame</span>
-             <button id="jumpCrowd" style="margin-left:8px">Jump to group</button></div>`
-        : "");
-    if (c && $("jump")) $("jump").onclick = () => { const p = $("player"); p.pause(); p.currentTime = Math.max(0, c.t); };
-    if ($("jumpCrowd")) $("jumpCrowd").onclick = () => { const p = $("player"); p.pause(); p.currentTime = Math.max(0, det.crowd_t || 0); };
-  });
-  $("ack").onclick = () => {
-    acked.has(i.id) ? acked.delete(i.id) : acked.add(i.id);
-    localStorage.setItem("aisle-acked", JSON.stringify([...acked]));
-    render();
-  };
+/* ---------- top-level render ---------- */
+function ensureSelection() {
+  if (state.mode !== "incident") return;
+  const items = visible();
+  if (!items.some((i) => i.id === state.selected)) {
+    state.selected = items.length ? items[0].id : null;
+    state.cam = 0;
+  }
 }
 
-function render() { renderStats(); renderFilters(); renderList(); renderDetail(); }
+let lastDetailKey = null;
+function renderDetail(force = false) {
+  const key = state.mode === "ask"
+    ? `ask|${state.askBusy}|${state.ask && state.ask.question}|${state.askSel}`
+    : `inc|${state.selected}|${state.cam}|${acked.has(state.selected)}|${!!state.ask}`;
+  if (!force && key === lastDetailKey && $("player")) return;
+  lastDetailKey = key;
+  state.mode === "ask" ? renderAsk() : renderIncident();
+}
+
+function render() {
+  ensureSelection();
+  renderStats(); renderFilters(); renderList(); renderDetail();
+}
 
 async function load() {
   try {
     const r = await fetch(`${BASE}api/board`, { cache: "no-store" });
     data = await r.json();
     const when = data.updated ? new Date(data.updated * 1000).toLocaleTimeString() : "not yet";
-    $("sub").textContent = `${(data.locations || []).join(", ")} · ${data.incidents.length} incidents · updated ${when}`;
+    const sites = [...new Set(data.incidents.map((i) => siteOf(i.scene)))];
+    $("sub").textContent = `${sites.length ? sites.join(", ") : "Warehouse cameras"} · updated ${when}`;
     $("warn").hidden = !data.error;
     $("warn").textContent = data.error ? `Last refresh failed: ${data.error}` : "";
-    if (!selected && mode === "incident" && data.incidents.length) selected = data.incidents[0].id;
-    renderStats(); renderFilters(); renderList();
-    if (!document.getElementById("player")) renderDetail();
+    render();
   } catch (e) {
     $("sub").textContent = "Could not reach the board API";
   }
 }
 
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches?.("input, textarea") || !["ArrowDown", "ArrowUp"].includes(e.key)) return;
+  const items = visible();
+  if (!items.length) return;
+  const idx = state.mode === "incident" ? items.findIndex((i) => i.id === state.selected) : -1;
+  const next = items[Math.max(0, Math.min(items.length - 1, idx + (e.key === "ArrowDown" ? 1 : -1)))];
+  if (next) { e.preventDefault(); openIncident(next.id); }
+});
 $("askForm").onsubmit = (e) => { e.preventDefault(); ask($("askInput").value); };
 document.querySelectorAll(".ask .ex").forEach((b) => b.onclick = () => ask(b.textContent));
-$("refresh").onclick = async () => { await fetch(`${BASE}api/refresh`, { method: "POST" }); setTimeout(load, 4000); };
-$("showAck").onclick = () => { showAck = !showAck; $("showAck").textContent = showAck ? "Hide acknowledged" : "Show acknowledged"; render(); };
+$("refresh").onclick = async () => {
+  const btn = $("refresh");
+  btn.disabled = true; btn.textContent = "Refreshing…";
+  try { await fetch(`${BASE}api/refresh`, { method: "POST" }); } catch (e) { /* load() reports reachability */ }
+  setTimeout(async () => { await load(); btn.disabled = false; btn.textContent = "Refresh"; }, 5000);
+};
 load();
 setInterval(load, 30000);
 </script>

@@ -178,6 +178,9 @@ def build_board(chunks, dets=None):
     for c in chunks:
         run, cam, group, offset = describe_chunk(c)
         for seg in c.get("timeline") or []:
+            # Mid-relabel chunks are listed under both their old and new location.
+            if seg.get("source") in captions:
+                continue
             views_total += 1
             p = parse_caption(seg.get("reasoning_content"))
             start = offset + float(seg.get("segment_start_sec") or 0)
@@ -466,6 +469,11 @@ class Board:
             sources = [s.get("source") for c in chunks for s in c.get("timeline") or [] if s.get("source")]
             with ThreadPoolExecutor(8) as pool:
                 dets = dict(zip(sources, pool.map(get_detections_or_none, sources)))
+            missing = [s for s, d in dets.items() if d is None]
+            if missing:
+                time.sleep(5)
+                with ThreadPoolExecutor(2) as pool:
+                    dets.update(zip(missing, pool.map(get_detections_or_none, missing)))
             incidents, stats, captions = build_board(chunks, dets)
             with self.lock:
                 old = {i["id"]: i for i in self.incidents}
