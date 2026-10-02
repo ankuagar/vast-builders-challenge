@@ -33,10 +33,11 @@
   .ask input:focus { outline: none; border-color: var(--accent); }
   .ask .ex { font-size: 12px; color: var(--muted); background: transparent; border-style: dashed; }
 
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; padding: 12px 22px; }
-  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; text-align: left; }
-  .stat .v { font-size: 22px; font-weight: 700; }
-  .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; padding: 8px 22px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; text-align: left; }
+  .stats .stat { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; }
+  .stat .v { font-size: 18px; font-weight: 700; }
+  .stat .k { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
   .stat.high .v { color: var(--high); } .stat.medium .v { color: var(--medium); } .stat.low .v { color: var(--low); }
   button.stat:hover { border-color: var(--accent); }
   button.stat.on { background: var(--panel); color: var(--text); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -116,8 +117,9 @@
   .page h3 { margin: 0 0 10px; font-size: 15px; display: flex; gap: 10px; align-items: baseline; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 14px; }
-  .kpis .stat { padding: 10px 12px; }
-  .kpis .muted { margin-top: 2px; }
+  .kpis .stat { padding: 7px 12px; }
+  .kpis .k { color: var(--text); }
+  .kpis .k, .kpis .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hot { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); gap: 14px; align-items: start; }
   .hotlist { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; }
   .hotrow { text-align: left; display: flex; flex-direction: column; gap: 2px; }
@@ -223,7 +225,10 @@ const fmtGap = (g) => g == null ? "n/a" : g < 0.2 ? "< 0.2 m" : `${g.toFixed(1)}
 const gapClass = (g) => g == null ? "" : g < 1 ? "close" : g < 3 ? "mid" : "far";
 const siteOf = (scene) => (scene || "").split(" · ")[0];
 const clipUrl = (src) => `${BASE}clip?source=${encodeURIComponent(src)}`;
-const fmtDur = (s) => s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s || 0)} s`;
+const fmtDur = (s) => {
+  s = Math.round(s || 0);
+  return s >= 60 ? `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ""}` : `${s} s`;
+};
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const reviewer = () => localStorage.getItem("aisle-reviewer") || "";
 const reviewLabel = (r) => r.status === "false_alarm" ? "false alarm" : "acknowledged";
@@ -617,12 +622,12 @@ function renderInsights() {
 
   root.innerHTML = `
     <section class="kpis">
-      ${(insights.sites || []).map((s) => `<div class="stat info" title="Time in analysed footage when a person was within about 1 m of a vehicle">
-        <div class="v">${fmtDur(s.close_sec)}</div><div class="k">${esc(s.site)} · people within 1 m of a vehicle</div>
-        <div class="muted">${s.close_per_hour} s per hour of footage · ${fmtDur(s.footage_sec)} analysed</div></div>`).join("")}
+      ${(insights.sites || []).map((s) => `<div class="stat info" title="Time in analysed footage when a person was within about 1 m of a vehicle (${s.close_per_hour} s per hour of footage)">
+        <div class="v">${fmtDur(s.close_sec)}</div><div class="k">${esc(s.site)} · close to vehicles</div>
+        <div class="muted">${s.footage_sec ? Math.round(100 * s.close_sec / s.footage_sec) : 0}% of ${fmtDur(s.footage_sec)} of footage</div></div>`).join("")}
       <div class="stat info" title="${esc(COVERAGE_HELP)}"><div class="v">${data.stats.segments_analyzed ?? 0} / ${data.stats.segments_indexed ?? 0}</div>
         <div class="k">Clips analysed for safety</div>
-        <div class="muted">${(data.stats.segments_indexed ?? 0) - (data.stats.segments_analyzed ?? 0)} ingested clips only have a general description</div></div>
+        <div class="muted">${(data.stats.segments_indexed ?? 0) - (data.stats.segments_analyzed ?? 0)} have only a general description</div></div>
       <div class="stat info"><div class="v">${reviewed.length} / ${inc.length}</div><div class="k">Incidents reviewed</div>
         <div class="muted">${plural(falseAlarms, "false alarm")}</div></div>
       <div class="stat info"><div class="v">${new Set(Object.values(behaviors).flat()).size}</div>
