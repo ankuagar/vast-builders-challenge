@@ -56,7 +56,14 @@
   .detail { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-y: auto; }
   .detail h2 { margin: 0 0 4px; font-size: 18px; }
   .detail .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
-  video { width: 100%; max-height: 52vh; background: #000; border-radius: 8px; }
+  video { width: 100%; max-height: 52vh; background: #000; border-radius: 8px; display: block; }
+  .vwrap { position: relative; }
+  .vwrap canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .ovl { display: flex; align-items: center; gap: 10px; margin-top: 6px; color: var(--muted); font-size: 12px; }
+  .ovl label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text); }
+  .gapv { font-size: 22px; font-weight: 700; }
+  .gapv.close { color: var(--high); } .gapv.mid { color: var(--medium); } .gapv.far { color: var(--low); }
+  .chip.yolo { background: rgba(62,166,255,.15); color: var(--accent); }
   .cams { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 14px; }
   .cams button { font-size: 12px; }
   .cams button.on { border-color: var(--accent); color: var(--accent); }
@@ -106,6 +113,75 @@ const FILTERS = [
 let data = { incidents: [], stats: {} };
 let filter = "all", selected = null, selectedCam = 0, showAck = false;
 let mode = "incident", askResult = null, askSel = 0, askBusy = false;
+let showBoxes = localStorage.getItem("aisle-boxes") !== "off", overlayRun = 0;
+const detCache = {};
+
+const fmtGap = (g) => g == null ? "n/a" : g <= 0.1 ? "touching" : `≈ ${g.toFixed(1)} m`;
+const gapClass = (g) => g == null ? "" : g < 1 ? "close" : g < 3 ? "mid" : "far";
+
+function videoBlock(source) {
+  return `<div class="vwrap"><video id="player" src="${clipUrl(source)}" controls autoplay muted loop playsinline></video><canvas id="overlay"></canvas></div>
+    <div class="ovl"><label><input type="checkbox" id="boxesToggle" ${showBoxes ? "checked" : ""}> YOLO boxes + closest gap</label><span id="ovlNote"></span></div>`;
+}
+
+async function loadDetections(source) {
+  if (!detCache[source]) {
+    detCache[source] = fetch(`${BASE}api/detections?source=${encodeURIComponent(source)}`)
+      .then((r) => r.ok ? r.json() : null).catch(() => null);
+  }
+  return detCache[source];
+}
+
+async function attachOverlay(source, onInfo) {
+  const run = ++overlayRun;
+  const toggle = $("boxesToggle");
+  if (toggle) toggle.onchange = () => { showBoxes = toggle.checked; localStorage.setItem("aisle-boxes", showBoxes ? "on" : "off"); };
+  const det = await loadDetections(source);
+  if (run !== overlayRun) return;
+  if (onInfo) onInfo(det);
+  if (!det) { if ($("ovlNote")) $("ovlNote").textContent = "No YOLO detections for this clip."; return; }
+  const labels = Object.entries(det.equipment_labels || {}).map(([k, n]) => `${k} ×${n}`).join(", ");
+  $("ovlNote").textContent = `Forklift isn't a YOLO class; spotted as ${labels || "nothing"} in ${det.equipment_frames}/${det.frames.length} frames.`;
+  const [sh, sw] = det.shape;
+  const draw = () => {
+    if (run !== overlayRun) return;
+    const video = $("player"), canvas = $("overlay");
+    if (!video || !canvas) return;
+    const cw = video.clientWidth, ch = video.clientHeight;
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, cw, ch);
+    if (showBoxes && det.frames.length) {
+      const vw = video.videoWidth || sw, vh = video.videoHeight || sh;
+      const scale = Math.min(cw / vw, ch / vh), dw = vw * scale, dh = vh * scale;
+      const ox = (cw - dw) / 2, oy = (ch - dh) / 2, kx = dw / sw, ky = dh / sh;
+      const fr = det.frames[Math.min(det.frames.length - 1, Math.floor(video.currentTime * det.fps))];
+      const X = (x) => ox + x * kx, Y = (y) => oy + y * ky;
+      const close = fr.gap_m != null && fr.gap_m < 1;
+      ctx.lineWidth = 2.5; ctx.font = "bold 13px system-ui";
+      for (const b of fr.e) {
+        ctx.setLineDash(fr.held ? [6, 5] : []);
+        ctx.strokeStyle = "#faad14"; ctx.strokeRect(X(b[0]), Y(b[1]), (b[2] - b[0]) * kx, (b[3] - b[1]) * ky);
+        ctx.fillStyle = "#faad14"; ctx.fillText(fr.held ? "forklift (held)" : "forklift", X(b[0]) + 4, Y(b[1]) - 6);
+      }
+      ctx.setLineDash([]);
+      for (const b of fr.p) {
+        ctx.strokeStyle = close ? "#ff4d4f" : "#52c41a"; ctx.strokeRect(X(b[0]), Y(b[1]), (b[2] - b[0]) * kx, (b[3] - b[1]) * ky);
+        ctx.fillStyle = ctx.strokeStyle; ctx.fillText("person", X(b[0]) + 4, Y(b[1]) - 6);
+      }
+      if (fr.line) {
+        const [x1, y1, x2, y2] = fr.line;
+        ctx.strokeStyle = close ? "#ff4d4f" : "#ffffff"; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(X(x1), Y(y1)); ctx.lineTo(X(x2), Y(y2)); ctx.stroke(); ctx.setLineDash([]);
+        const label = fmtGap(fr.gap_m), tx = (X(x1) + X(x2)) / 2 + 8, ty = (Y(y1) + Y(y2)) / 2;
+        ctx.fillStyle = "rgba(0,0,0,.7)"; ctx.fillRect(tx - 4, ty - 15, ctx.measureText(label).width + 8, 20);
+        ctx.fillStyle = close ? "#ff4d4f" : "#ffffff"; ctx.fillText(label, tx, ty);
+      }
+    }
+    requestAnimationFrame(draw);
+  };
+  requestAnimationFrame(draw);
+}
 const acked = new Set(JSON.parse(localStorage.getItem("aisle-acked") || "[]"));
 
 const $ = (id) => document.getElementById(id);
@@ -153,7 +229,7 @@ function renderList() {
         <span class="when">${fmtSec(i.start_sec)}–${fmtSec(i.end_sec)} · ${i.flagging_cameras}/${i.views.length} cams</span>
       </div>
       <div class="sum">${esc(i.summary)}</div>
-      <div class="chips">${i.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("")}</div>
+      <div class="chips">${i.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("")}${i.yolo_gap ? `<span class="chip yolo">YOLO gap ${fmtGap(i.yolo_gap.gap_m)}</span>` : ""}</div>
     </div>`).join("");
   $("list").querySelectorAll(".card").forEach((c) => c.onclick = () => { selected = c.dataset.id; selectedCam = 0; mode = "incident"; render(); });
 }
@@ -179,7 +255,7 @@ function renderAsk() {
   $("detail").innerHTML = `
     <h2>Ask the floor</h2>
     <div class="meta">“${esc(r.question)}” · ${r.clips.length} matching moments from hybrid search</div>
-    <video id="player" src="${clipUrl(c.source)}" controls autoplay muted loop playsinline></video>
+    ${videoBlock(c.source)}
     <div class="meta" style="margin-top:8px">${esc(c.scene)} · ${esc(c.camera)} · ${fmtSec(c.start_sec)}–${fmtSec(c.end_sec)}${c.risk ? ` · <span class="badge ${c.risk}">${c.risk}</span>` : ""}
       ${c.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join(" ")}</div>
     <div class="box answer"><div class="lbl">Answer</div>${mdLite(r.answer)}</div>
@@ -190,6 +266,7 @@ function renderAsk() {
         <div class="txt">${esc(h.narrative || "")}</div></span>
       </button>`).join("")}</div></div>`;
   $("detail").querySelectorAll(".hit").forEach((b) => b.onclick = () => { askSel = +b.dataset.n; renderAsk(); });
+  attachOverlay(c.source);
 }
 
 async function ask(question) {
@@ -219,12 +296,13 @@ function renderDetail() {
   $("detail").innerHTML = `
     <h2><span class="badge ${i.risk}">${i.risk}</span> ${esc(i.scene)} · ${fmtSec(i.start_sec)}–${fmtSec(i.end_sec)}</h2>
     <div class="meta">${esc(i.location)} · ${esc(i.camera_id)} · flagged by ${i.flagging_cameras} of ${i.views.length} camera angles</div>
-    <video id="player" src="${clipUrl(v.source)}" controls autoplay muted loop playsinline></video>
+    ${videoBlock(v.source)}
     <div class="cams">${i.views.map((c, n) => `
       <button class="${n === selectedCam ? "on" : ""}" data-n="${n}"><span class="dot ${c.events.length ? c.risk : ""}"></span>${esc(c.camera)}</button>`).join("")}
     </div>
     <div class="box"><div class="lbl">What happened</div>${esc(i.summary)}</div>
     ${i.action ? `<div class="box action"><div class="lbl">Suggested action</div>${esc(i.action)}</div>` : ""}
+    <div class="box" id="gapBox"><div class="lbl">Closest person–forklift gap · ${esc(v.camera)}</div><span class="when">Measuring…</span></div>
     <div class="box">
       <div class="lbl">${esc(v.camera)} · risk ${esc(v.risk || "n/a")}${v.gap ? ` · closest gap ${esc(v.gap)}` : ""}</div>
       <div class="chips" style="margin:0 0 8px">${v.events.length ? v.events.map((e) => `<span class="chip">${EVENT_LABEL[e] || e}</span>`).join("") : `<span class="chip">No conflict from this angle</span>`}</div>
@@ -232,6 +310,18 @@ function renderDetail() {
     </div>
     <button id="ack">${acked.has(i.id) ? "Reopen incident" : "Acknowledge"}</button>`;
   $("detail").querySelectorAll(".cams button").forEach((b) => b.onclick = () => { selectedCam = +b.dataset.n; renderDetail(); });
+  attachOverlay(v.source, (det) => {
+    const box = $("gapBox");
+    if (!box) return;
+    const c = det && det.closest;
+    const said = v.gap ? `Cosmos caption says <strong>${esc(v.gap)}</strong>.` : "Cosmos caption gives no distance.";
+    box.innerHTML = `<div class="lbl">Closest person–forklift gap · ${esc(v.camera)}</div>` + (c
+      ? `<span class="gapv ${gapClass(c.gap_m)}">${fmtGap(c.gap_m)}</span> <span class="when">YOLO at ${fmtSec(c.t)}${c.held ? " (forklift box held from an earlier frame)" : ""}</span>
+         <button id="jump" style="margin-left:8px">Jump to moment</button>
+         <div class="when" style="margin-top:6px">${said} Estimate = 2D box distance scaled by the person's height (~1.7 m).</div>`
+      : `<span class="when">YOLO saw no forklift near a person from this angle. ${said}</span>`);
+    if (c && $("jump")) $("jump").onclick = () => { const p = $("player"); p.pause(); p.currentTime = Math.max(0, c.t); };
+  });
   $("ack").onclick = () => {
     acked.has(i.id) ? acked.delete(i.id) : acked.add(i.id);
     localStorage.setItem("aisle-acked", JSON.stringify([...acked]));

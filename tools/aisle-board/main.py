@@ -193,6 +193,104 @@ def build_board(chunks):
     return flagged, stats, captions
 
 
+# COCO has no forklift class; on these cameras YOLO lands on forklifts under these labels.
+EQUIPMENT_LABELS = {"truck", "car", "bus", "train", "motorcycle", "boat", "airplane", "suitcase",
+                    "oven", "refrigerator", "bench", "couch", "dining table", "microwave", "tv"}
+PERSON_HEIGHT_M = 1.7
+HOLD_FRAMES = 45
+MIN_CONF = 0.35
+MIN_AREA_FRAC = 0.003
+
+
+def _overlap_or_near(a, b, pad=10):
+    return not (a[2] + pad < b[0] or b[2] + pad < a[0] or a[3] + pad < b[1] or b[3] + pad < a[1])
+
+
+def _merge_boxes(boxes):
+    boxes = [list(b) for b in boxes]
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                if _overlap_or_near(boxes[i], boxes[j]):
+                    a, b = boxes[i], boxes.pop(j)
+                    boxes[i] = [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])]
+                    merged = True
+                    break
+            if merged:
+                break
+    return boxes
+
+
+def _gap(a, b):
+    dx = max(0, b[0] - a[2], a[0] - b[2])
+    dy = max(0, b[1] - a[3], a[1] - b[3])
+    bcx, bcy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+    pa = (min(max(bcx, a[0]), a[2]), min(max(bcy, a[1]), a[3]))
+    pb = (min(max(pa[0], b[0]), b[2]), min(max(pa[1], b[1]), b[3]))
+    return (dx * dx + dy * dy) ** 0.5, [round(pa[0]), round(pa[1]), round(pb[0]), round(pb[1])]
+
+
+def analyze_detections(det):
+    h, w = (det.get("video_shape") or [1080, 1920])[:2]
+    min_area = MIN_AREA_FRAC * w * h
+    fps = det.get("fps") or 30.0
+    frames, labels, heights = [], {}, []
+    last_eq, last_eq_idx = [], -10 ** 9
+    for f in det.get("frames") or []:
+        persons, eq = [], []
+        for d in f.get("detections") or []:
+            x1, y1, x2, y2 = d["bbox"]
+            if d["confidence"] < MIN_CONF:
+                continue
+            if d["label"] == "person":
+                persons.append([x1, y1, x2, y2])
+                heights.append(y2 - y1)
+            elif d["label"] in EQUIPMENT_LABELS and (x2 - x1) * (y2 - y1) >= min_area:
+                eq.append([x1, y1, x2, y2])
+                labels[d["label"]] = labels.get(d["label"], 0) + 1
+        idx = f.get("frame_index", len(frames))
+        held = False
+        if eq:
+            eq = _merge_boxes(eq)
+            last_eq, last_eq_idx = eq, idx
+        elif last_eq and idx - last_eq_idx <= HOLD_FRAMES:
+            eq, held = last_eq, True
+        frames.append({"t": f.get("time_sec", idx / fps), "p": persons, "e": eq, "held": held})
+
+    heights.sort()
+    person_h = heights[len(heights) // 2] if heights else None
+    closest = None
+    for fr in frames:
+        best = None
+        for p in fr["p"]:
+            for e in fr["e"]:
+                g, line = _gap(p, e)
+                if best is None or g < best[0]:
+                    best = (g, line)
+        if best:
+            fr["gap_px"] = round(best[0])
+            fr["line"] = best[1]
+            fr["gap_m"] = round(best[0] * PERSON_HEIGHT_M / person_h, 2) if person_h else None
+            if fr["gap_m"] is not None and (closest is None or fr["gap_m"] < closest["gap_m"]):
+                closest = {"gap_m": fr["gap_m"], "t": round(fr["t"], 2), "held": fr["held"]}
+    return {"shape": [h, w], "fps": fps, "frames": frames, "closest": closest,
+            "equipment_labels": labels, "person_height_px": person_h,
+            "equipment_frames": sum(1 for fr in frames if fr["e"] and not fr["held"]),
+            "person_frames": sum(1 for fr in frames if fr["p"])}
+
+
+_det_cache = {}
+
+
+def get_detections(source):
+    if source not in _det_cache:
+        det = vss.get("/api/v1/videos/detections?" + urllib.parse.urlencode({"source": source}))
+        _det_cache[source] = analyze_detections(det)
+    return _det_cache[source]
+
+
 _llm_cache = {}
 
 
@@ -249,6 +347,22 @@ class Board:
                 self.incidents, self.stats, self.captions = incidents, stats, captions
                 self.updated, self.error = time.time(), None
             print(f"refreshed: {stats}", flush=True)
+            for inc in incidents:
+                for v in inc["views"]:
+                    try:
+                        closest = get_detections(v["source"])["closest"]
+                    except Exception as e:
+                        print("detections error:", v["source"], e, flush=True)
+                        continue
+                    if closest:
+                        with self.lock:
+                            v["yolo_gap_m"], v["yolo_t"] = closest["gap_m"], closest["t"]
+                gaps = [(v["yolo_gap_m"], v["camera"], v["yolo_t"]) for v in inc["views"]
+                        if v["events"] and v.get("yolo_gap_m") is not None]
+                if gaps:
+                    g = min(gaps)
+                    with self.lock:
+                        inc["yolo_gap"] = {"gap_m": g[0], "camera": g[1], "t": g[2]}
             for inc in incidents:
                 if inc.get("llm_key") == self._key(inc):
                     continue
@@ -337,6 +451,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(board.snapshot()))
         if url.path == "/clip":
             return self._clip(urllib.parse.parse_qs(url.query).get("source", [""])[0])
+        if url.path == "/api/detections":
+            source = urllib.parse.parse_qs(url.query).get("source", [""])[0]
+            if not board.can_stream(source):
+                return self._send(403, json.dumps({"error": "unknown clip"}))
+            try:
+                return self._send(200, json.dumps(get_detections(source)))
+            except urllib.error.HTTPError as e:
+                return self._send(404 if e.code == 404 else 502, json.dumps({"error": f"detections {e.code}"}))
         self._send(404, json.dumps({"error": "not found"}))
 
     def do_POST(self):
