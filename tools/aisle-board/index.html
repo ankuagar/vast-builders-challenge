@@ -19,6 +19,7 @@
   header #sub { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .sub, .when, .muted { color: var(--muted); font-size: 12px; }
   header .sub { font-size: 13px; }
+  header .sub strong { color: var(--text); }
   .spacer { flex: 1; }
   button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
   button:hover:not(:disabled) { border-color: var(--accent); }
@@ -228,6 +229,12 @@ const reviewer = () => localStorage.getItem("aisle-reviewer") || "";
 const reviewLabel = (r) => r.status === "false_alarm" ? "false alarm" : "acknowledged";
 const reviewedCount = () => data.incidents.filter((i) => reviews[i.id]).length;
 const incById = (id) => data.incidents.find((i) => i.id === id);
+const COVERAGE_HELP = "Ingested: 5-second clips indexed from the warehouse cameras. Analysed for safety: clips whose AI " +
+  "description includes the safety checklist (near misses, blocking, crowding). The rest only have a general description.";
+const coverageText = () => {
+  const s = data.stats || {};
+  return `<strong>${s.segments_indexed ?? 0}</strong> clips ingested · <strong>${s.segments_analyzed ?? 0}</strong> analysed for safety`;
+};
 
 /* ---------- filtering: one rule set for cards, chips and the list ---------- */
 const inScope = (i) => (state.showAck || !reviews[i.id]) && (state.site === "all" || siteOf(i.scene) === state.site);
@@ -613,6 +620,9 @@ function renderInsights() {
       ${(insights.sites || []).map((s) => `<div class="stat info" title="Time in analysed footage when a person was within about 1 m of a vehicle">
         <div class="v">${fmtDur(s.close_sec)}</div><div class="k">${esc(s.site)} · people within 1 m of a vehicle</div>
         <div class="muted">${s.close_per_hour} s per hour of footage · ${fmtDur(s.footage_sec)} analysed</div></div>`).join("")}
+      <div class="stat info" title="${esc(COVERAGE_HELP)}"><div class="v">${data.stats.segments_analyzed ?? 0} / ${data.stats.segments_indexed ?? 0}</div>
+        <div class="k">Clips analysed for safety</div>
+        <div class="muted">${(data.stats.segments_indexed ?? 0) - (data.stats.segments_analyzed ?? 0)} ingested clips only have a general description</div></div>
       <div class="stat info"><div class="v">${reviewed.length} / ${inc.length}</div><div class="k">Incidents reviewed</div>
         <div class="muted">${plural(falseAlarms, "false alarm")}</div></div>
       <div class="stat info"><div class="v">${new Set(Object.values(behaviors).flat()).size}</div>
@@ -731,7 +741,7 @@ function renderReport() {
     </section>
     ${causes.length ? `<section class="panel"><h3>Recurring causes</h3><ul>${causes.map((c) =>
       `<li><strong>${esc(c.cause)}</strong> (${plural(c.ids.length, "incident")})${c.fix ? `: ${esc(c.fix)}` : ""}</li>`).join("")}</ul></section>` : ""}
-    <div class="muted">Based on ${s.segments_analyzed ?? 0} of ${s.segments_indexed ?? 0} video clips analysed by AI.
+    <div class="muted">Based on ${s.segments_indexed ?? 0} ingested clips, ${s.segments_analyzed ?? 0} of them analysed for safety.
       Distances are estimates from the video; open an incident to check the clip.</div>
   </div>`;
   $("printReport").onclick = () => window.print();
@@ -849,10 +859,8 @@ async function load() {
     const r = await fetch(`${BASE}api/board`, { cache: "no-store" });
     data = await r.json();
     reviews = data.reviews || {};
-    const when = data.updated ? new Date(data.updated * 1000).toLocaleTimeString() : "not yet";
-    const sites = [...new Set(data.incidents.map((i) => siteOf(i.scene)))];
-    const s = data.stats || {};
-    $("sub").textContent = `${sites.length ? sites.join(", ") : "Warehouse cameras"} · ${s.segments_analyzed ?? 0} of ${s.segments_indexed ?? 0} clips reviewed · updated ${when}`;
+    const when = data.updated ? new Date(data.updated * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "not yet";
+    $("sub").innerHTML = `<span title="${esc(COVERAGE_HELP)}">${coverageText()}</span> · updated ${when}`;
     showWarn(data.error ? `Last refresh failed: ${data.error}` : "");
     render();
   } catch (e) {
